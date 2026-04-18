@@ -16,6 +16,33 @@ from config import (
     LEARNING_RATE, DROPOUT_1, DROPOUT_2, DENSE_UNITS
 )
 
+# --- Dataset ---
+class FruitDataset(torch.utils.data.Dataset):
+    def __init__(self, images, labels=None):
+        self.images = images  # uint8 images (N, H, W, 3)
+        self.labels = labels
+
+    def __len__(self):
+        return len(self.images)
+
+    def __getitem__(self, idx):
+        img = self.images[idx]
+        
+        # Preprocess on the fly (uint8 -> float32)
+        img = img.astype(np.float32) / 255.0
+        # Transpose to (C, H, W) for PyTorch
+        img = np.transpose(img, (2, 0, 1))
+        # Normalize to [-1, 1]
+        img = (img - 0.5) / 0.5
+        
+        img_tensor = torch.from_numpy(img)
+        
+        if self.labels is not None:
+            label = torch.tensor(self.labels[idx], dtype=torch.long)
+            return img_tensor, label
+        return img_tensor
+
+
 # --- Define Model ---
 class CustomCNN(nn.Module):
     def __init__(self, num_classes):
@@ -72,13 +99,18 @@ class CustomCNN(nn.Module):
 def preprocess_input(X):
     """
     Standardize NumPy images for PyTorch CustomCNN.
+    Supports both single images (H, W, 3) and batches (N, H, W, 3).
     """
-    # Convert to float32 and scale to [0, 1]
-    X = X.astype(np.float32) / 255.0
-    # Transpose to (N, C, H, W)
-    X = np.transpose(X, (0, 3, 1, 2))
-    # Normalize arbitrarily to [-1, 1]
-    X = (X - 0.5) / 0.5
+    if X.ndim == 3:
+        # Single image
+        X = X.astype(np.float32) / 255.0
+        X = np.transpose(X, (2, 0, 1))
+        X = (X - 0.5) / 0.5
+    else:
+        # Batch
+        X = X.astype(np.float32) / 255.0
+        X = np.transpose(X, (0, 3, 1, 2))
+        X = (X - 0.5) / 0.5
     return X
 
 
@@ -119,7 +151,7 @@ def train_cnn(
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer, mode='min', factor=0.5, patience=3, min_lr=1e-7, verbose=True
+        optimizer, mode='min', factor=0.5, patience=3, min_lr=1e-7
     )
 
     start_epoch = 0

@@ -11,6 +11,7 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
+from concurrent.futures import ProcessPoolExecutor
 from config import RANDOM_STATE, TEST_SIZE, VAL_SIZE_FROM_TRAINVAL, DATASET_DIR, RESULTS_DIR, IMG_SIZE
 
 
@@ -55,6 +56,22 @@ def background_cancellation(image):
     mask_3ch = cv2.merge([combined, combined, combined])
     return cv2.bitwise_and(image, mask_3ch)
 
+def _process_single_image(args):
+    """Helper for parallel processing."""
+    path, fname, cls, img_size = args
+    img = cv2.imread(os.path.join(path, fname))
+    if img is None:
+        return None, None, None
+    
+    roi = background_cancellation(img)
+    roi = cv2.resize(roi, (img_size, img_size))
+    roi_rgb = cv2.cvtColor(roi, cv2.COLOR_BGR2RGB)
+    
+    # Also return a resized original for sample visualization
+    orig_resized = cv2.cvtColor(cv2.resize(img, (img_size, img_size)), cv2.COLOR_BGR2RGB)
+    
+    return roi_rgb, cls, orig_resized
+
 def load_and_preprocess_images(dataset_dir=DATASET_DIR, img_size=IMG_SIZE,
                                 save_samples=True):
     """
@@ -78,33 +95,34 @@ def load_and_preprocess_images(dataset_dir=DATASET_DIR, img_size=IMG_SIZE,
     images, labels = [], []
     samples = {}
 
+    tasks = []
     for cls, path in class_dirs.items():
         if not os.path.exists(path):
             print(f"  [WARNING] Not found: {path}")
             continue
-
+        
         files = [f for f in os.listdir(path)
                  if f.lower().endswith(('.jpg', '.jpeg', '.png', '.bmp'))]
-        print(f"  {cls}: {len(files)} images ... ", end="")
-
+        print(f"  {cls}: {len(files)} images ...")
         for fname in files:
-            img = cv2.imread(os.path.join(path, fname))
-            if img is None:
-                continue
+            tasks.append((path, fname, cls, img_size))
 
-            roi = background_cancellation(img)
-            roi = cv2.resize(roi, (img_size, img_size))
-            roi_rgb = cv2.cvtColor(roi, cv2.COLOR_BGR2RGB)
-
+    print(f"  Processing {len(tasks)} images in parallel ... ", end="", flush=True)
+    
+    images, labels = [], []
+    samples = {}
+    
+    with ProcessPoolExecutor() as executor:
+        results = list(executor.map(_process_single_image, tasks))
+        
+    for roi_rgb, cls, orig_resnet in results:
+        if roi_rgb is not None:
             images.append(roi_rgb)
             labels.append(cls)
-
             if cls not in samples:
-                orig = cv2.cvtColor(cv2.resize(img, (img_size, img_size)),
-                                    cv2.COLOR_BGR2RGB)
-                samples[cls] = {'original': orig, 'preprocessed': roi_rgb}
+                samples[cls] = {'original': orig_resnet, 'preprocessed': roi_rgb}
 
-        print("[OK]")
+    print("[OK]")
 
     if save_samples and samples:
         _save_preprocessing_samples(samples)

@@ -15,7 +15,7 @@ from config import (
 from preprocessing import load_and_preprocess_images, split_dataset
 from augmentation import create_augmented_data
 from classifiers import train_and_evaluate
-from model import CustomCNN, preprocess_input, train_cnn, extract_features_loop
+from model import CustomCNN, preprocess_input, train_cnn, extract_features_loop, FruitDataset
 from visualization import plot_confusion_matrices, plot_comparison_chart, print_summary_table
 
 warnings.filterwarnings('ignore')
@@ -37,26 +37,24 @@ def main():
     # 3. Augment
     X_tr_aug, y_tr_aug = create_augmented_data(X_tr, y_tr)
     
-    # Preprocess NumPy to PyTorch DataLoaders
-    X_tr_p = preprocess_input(X_tr_aug)
-    X_v_p  = preprocess_input(X_v)
-    X_tr_orig_p = preprocess_input(X_tr)
-    X_te_p = preprocess_input(X_te)
-    
+    # 4. DataLoaders (using FruitDataset for memory efficiency)
     train_loader = DataLoader(
-        TensorDataset(torch.tensor(X_tr_p), torch.tensor(y_tr_aug.astype(np.int64))),
-        batch_size=BATCH_SIZE, shuffle=True
+        FruitDataset(X_tr_aug, y_tr_aug.astype(np.int64)),
+        batch_size=BATCH_SIZE, shuffle=True,
+        num_workers=4, pin_memory=True
     )
     val_loader = DataLoader(
-        TensorDataset(torch.tensor(X_v_p), torch.tensor(y_v.astype(np.int64))),
-        batch_size=BATCH_SIZE, shuffle=False
+        FruitDataset(X_v, y_v.astype(np.int64)),
+        batch_size=BATCH_SIZE, shuffle=False,
+        num_workers=4, pin_memory=True
     )
     
-    train_orig_loader = DataLoader(TensorDataset(torch.tensor(X_tr_orig_p)), batch_size=BATCH_SIZE, shuffle=False)
-    test_loader = DataLoader(TensorDataset(torch.tensor(X_te_p)), batch_size=BATCH_SIZE, shuffle=False)
+    train_orig_loader = DataLoader(FruitDataset(X_tr), batch_size=BATCH_SIZE, shuffle=False, num_workers=4, pin_memory=True)
+    test_loader = DataLoader(FruitDataset(X_te), batch_size=BATCH_SIZE, shuffle=False, num_workers=4, pin_memory=True)
     
     # 4. Train Custom CNN
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    print(f"Device: {device}")
     model = CustomCNN(num_classes).to(device)
     
     save_dir = os.path.join(RESULTS_DIR, "train_save_model")

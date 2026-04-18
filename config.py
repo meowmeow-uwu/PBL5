@@ -16,7 +16,7 @@ CLASS_NAMES = ['Reject', 'Ripe', 'Unripe']
 
 RANDOM_STATE = 42
 BATCH_SIZE = 32
-FINE_TUNE_EPOCHS = 30
+FINE_TUNE_EPOCHS = 50
 AUGMENTATION_FACTOR = 3     # Number of augmented copies per training image
 
 TEST_SIZE = 0.20
