@@ -12,8 +12,7 @@ import warnings
 from config import (
     DATASET_DIR, RESULTS_DIR, BATCH_SIZE, RANDOM_STATE, FINE_TUNE_EPOCHS
 )
-from preprocessing import load_and_preprocess_images
-from main import split_dataset   # Re-using the same split function
+from preprocessing import load_and_preprocess_images, split_dataset
 from augmentation import create_augmented_data
 from classifiers import train_and_evaluate
 from model import CustomCNN, preprocess_input, train_cnn, extract_features_loop

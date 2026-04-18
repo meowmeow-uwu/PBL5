@@ -3,10 +3,13 @@ Configuration constants for Experiment 4: Three-Class Tomato Quality Classificat
 """
 
 import os
+from dotenv import load_dotenv
 
-DATASET_DIR = r"e:\PBL5\Dataset\Dataset\Three Classes"
-DATASET_CACHUA_DIR = r"e:\PBL5\Dataset\Dataset_Cachua"
-RESULTS_DIR = r"e:\PBL5\results"
+load_dotenv()
+
+DATASET_DIR = os.getenv("DATASET_DIR", "./Dataset/Three Classes")
+DATASET_CACHUA_DIR = os.getenv("DATASET_CACHUA_DIR", "./Dataset_Cachua")
+RESULTS_DIR = os.getenv("RESULTS_DIR", "./results")
 
 IMG_SIZE = 299              # Input size
 CLASS_NAMES = ['Reject', 'Ripe', 'Unripe']

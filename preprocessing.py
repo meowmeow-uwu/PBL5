@@ -9,8 +9,10 @@ import cv2
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import LabelEncoder
+from config import RANDOM_STATE, TEST_SIZE, VAL_SIZE_FROM_TRAINVAL, DATASET_DIR, RESULTS_DIR, IMG_SIZE
 
-from config import DATASET_DIR, RESULTS_DIR, IMG_SIZE
 
 def background_cancellation(image):
     """
@@ -131,3 +133,34 @@ def _save_preprocessing_samples(samples):
     plt.savefig(out, dpi=150)
     plt.close()
     print(f"  Sample visualization saved to {out}")
+
+def split_dataset(images, labels):
+    """Stratified three-way split."""
+    print("\n" + "=" * 60)
+    print("STEP 2: Splitting Dataset (70% Train / 10% Val / 20% Test)")
+    print("=" * 60)
+
+    le = LabelEncoder()
+    y = le.fit_transform(labels)
+
+    X_tv, X_te, y_tv, y_te = train_test_split(
+        images, y, test_size=TEST_SIZE,
+        stratify=y, random_state=RANDOM_STATE,
+    )
+
+    X_tr, X_v, y_tr, y_v = train_test_split(
+        X_tv, y_tv, test_size=VAL_SIZE_FROM_TRAINVAL,
+        stratify=y_tv, random_state=RANDOM_STATE,
+    )
+
+    n = len(images)
+    print(f"  Train: {len(X_tr)} ({len(X_tr)/n*100:.1f}%)")
+    print(f"  Val:   {len(X_v)}  ({len(X_v)/n*100:.1f}%)")
+    print(f"  Test:  {len(X_te)} ({len(X_te)/n*100:.1f}%)")
+
+    for tag, ys in [("Train", y_tr), ("Val", y_v), ("Test", y_te)]:
+        counts = np.bincount(ys)
+        dist = ", ".join(f"{le.classes_[i]}: {counts[i]}" for i in range(len(counts)))
+        print(f"    {tag}: {dist}")
+
+    return X_tr, X_v, X_te, y_tr, y_v, y_te, le
