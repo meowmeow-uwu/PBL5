@@ -137,7 +137,8 @@ def _plot_history(history, plot_path):
 def train_cnn(
     model, train_loader, val_loader, 
     epochs, device, 
-    checkpoint_dir, prefix="model"
+    checkpoint_dir, prefix="model",
+    class_weights=None
 ):
     """
     Train CNN with checkpointing and plotting per epoch.
@@ -148,7 +149,10 @@ def train_cnn(
     best_ckpt_path = os.path.join(checkpoint_dir, f"{prefix}_best.pth")
     plot_path = os.path.join(checkpoint_dir, f"{prefix}_history.png")
     
-    criterion = nn.CrossEntropyLoss()
+    if class_weights is not None:
+        class_weights = class_weights.to(device)
+    
+    criterion = nn.CrossEntropyLoss(weight=class_weights)
     optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(
         optimizer, mode='min', factor=0.5, patience=3, min_lr=1e-7
