@@ -15,7 +15,7 @@ from config import (
 from preprocessing import load_and_preprocess_images, split_dataset
 from augmentation import create_augmented_data
 from classifiers import train_and_evaluate
-from model import CustomCNN, preprocess_input, train_cnn, extract_features_loop
+from model import CustomCNN, preprocess_input, train_cnn, extract_features_loop, FruitDataset
 from visualization import plot_confusion_matrices, plot_comparison_chart, print_summary_table
 
 warnings.filterwarnings('ignore')
@@ -37,23 +37,20 @@ def main():
     # 3. Augment
     X_tr_aug, y_tr_aug = create_augmented_data(X_tr, y_tr)
     
-    # Preprocess NumPy to PyTorch DataLoaders
-    X_tr_p = preprocess_input(X_tr_aug)
-    X_v_p  = preprocess_input(X_v)
-    X_tr_orig_p = preprocess_input(X_tr)
-    X_te_p = preprocess_input(X_te)
-    
+    # Use FruitDataset to handle preprocessing on-the-fly (saves memory)
     train_loader = DataLoader(
-        TensorDataset(torch.tensor(X_tr_p), torch.tensor(y_tr_aug.astype(np.int64))),
-        batch_size=BATCH_SIZE, shuffle=True
+        FruitDataset(X_tr_aug, y_tr_aug.astype(np.int64)),
+        batch_size=BATCH_SIZE, shuffle=True,
+        num_workers=4, pin_memory=True
     )
     val_loader = DataLoader(
-        TensorDataset(torch.tensor(X_v_p), torch.tensor(y_v.astype(np.int64))),
-        batch_size=BATCH_SIZE, shuffle=False
+        FruitDataset(X_v, y_v.astype(np.int64)),
+        batch_size=BATCH_SIZE, shuffle=False,
+        num_workers=4, pin_memory=True
     )
     
-    train_orig_loader = DataLoader(TensorDataset(torch.tensor(X_tr_orig_p)), batch_size=BATCH_SIZE, shuffle=False)
-    test_loader = DataLoader(TensorDataset(torch.tensor(X_te_p)), batch_size=BATCH_SIZE, shuffle=False)
+    train_orig_loader = DataLoader(FruitDataset(X_tr), batch_size=BATCH_SIZE, shuffle=False, num_workers=4, pin_memory=True)
+    test_loader = DataLoader(FruitDataset(X_te), batch_size=BATCH_SIZE, shuffle=False, num_workers=4, pin_memory=True)
     
     # 4. Initialize and Load Checkpoint from Train Module
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -67,15 +64,20 @@ def main():
     else:
         print("  => [WARNING] Base model not found! Training from scratch!")
         
-    # Freezing feature layers for Transfer Learning (optional)
-    # for param in model.features.parameters():
-    #     param.requires_grad = False
-    
+    # Class weights for Reject: 291, Ripe: 716, Unripe: 616
+    # le.classes_ are ['Reject', 'Ripe', 'Unripe'] usually, but let's be safe and check dist
+    counts = np.array([291, 716, 616])
+    total = counts.sum()
+    weights = total / (len(counts) * counts)
+    class_weights = torch.tensor(weights, dtype=torch.float)
+    print(f"  => Calculated Class Weights: {weights}")
+
     save_dir = os.path.join(RESULTS_DIR, "transfer_save_model")
     model, history = train_cnn(
         model, train_loader, val_loader,
         epochs=FINE_TUNE_EPOCHS, device=device,
-        checkpoint_dir=save_dir, prefix="transfer_cnn"
+        checkpoint_dir=save_dir, prefix="transfer_cnn",
+        class_weights=class_weights
     )
     
     # 5. Extract Features

@@ -57,11 +57,20 @@ def main():
     print(f"Device: {device}")
     model = CustomCNN(num_classes).to(device)
     
+    # Calculate class weights for the original dataset
+    targets = y_tr_aug.astype(np.int64)
+    class_sample_count = np.bincount(targets)
+    weights = 1. / class_sample_count
+    weights = weights / weights.sum() * num_classes
+    class_weights = torch.tensor(weights, dtype=torch.float)
+    print(f"  => Calculated Class Weights: {weights}")
+
     save_dir = os.path.join(RESULTS_DIR, "train_save_model")
     model, history = train_cnn(
         model, train_loader, val_loader,
         epochs=FINE_TUNE_EPOCHS, device=device,
-        checkpoint_dir=save_dir, prefix="base_cnn"
+        checkpoint_dir=save_dir, prefix="base_cnn",
+        class_weights=class_weights
     )
     
     # 5. Extract Features
