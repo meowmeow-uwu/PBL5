@@ -7,8 +7,8 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-DATASET_DIR = os.getenv("DATASET_DIR", "./Dataset/Three Classes")
-DATASET_CACHUA_DIR = os.getenv("DATASET_CACHUA_DIR", "./Dataset_Cachua")
+DATASET_DIR = os.getenv("DATASET_DIR", "../dataset/Dataset/Three Classes")
+DATASET_CACHUA_DIR = os.getenv("DATASET_CACHUA_DIR", "../dataset/Dataset_Cachua")
 RESULTS_DIR = os.getenv("RESULTS_DIR", "./results")
 
 IMG_SIZE = 299              # Input size
@@ -16,7 +16,7 @@ CLASS_NAMES = ['Reject', 'Ripe', 'Unripe']
 
 RANDOM_STATE = 42
 BATCH_SIZE = 32
-FINE_TUNE_EPOCHS = 30
+FINE_TUNE_EPOCHS = 50
 AUGMENTATION_FACTOR = 3     # Number of augmented copies per training image
 
 TEST_SIZE = 0.20

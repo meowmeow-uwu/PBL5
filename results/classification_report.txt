@@ -1,0 +1,42 @@
+
+============================================================
+Classification Report (CNN-SVM)
+============================================================
+              precision    recall  f1-score   support
+
+      Reject       1.00      1.00      1.00        58
+        Ripe       1.00      1.00      1.00       144
+      Unripe       1.00      1.00      1.00       123
+
+    accuracy                           1.00       325
+   macro avg       1.00      1.00      1.00       325
+weighted avg       1.00      1.00      1.00       325
+
+
+============================================================
+Classification Report (CNN-RF)
+============================================================
+              precision    recall  f1-score   support
+
+      Reject       1.00      0.98      0.99        58
+        Ripe       0.99      1.00      1.00       144
+      Unripe       1.00      1.00      1.00       123
+
+    accuracy                           1.00       325
+   macro avg       1.00      0.99      1.00       325
+weighted avg       1.00      1.00      1.00       325
+
+
+============================================================
+Classification Report (CNN-KNN (PCA))
+============================================================
+              precision    recall  f1-score   support
+
+      Reject       1.00      1.00      1.00        58
+        Ripe       1.00      1.00      1.00       144
+      Unripe       1.00      1.00      1.00       123
+
+    accuracy                           1.00       325
+   macro avg       1.00      1.00      1.00       325
+weighted avg       1.00      1.00      1.00       325
+
