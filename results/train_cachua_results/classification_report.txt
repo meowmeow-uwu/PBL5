@@ -1,0 +1,56 @@
+
+============================================================
+Classification Report (CNN-SVM)
+============================================================
+              precision    recall  f1-score   support
+
+      Reject       0.99      0.95      0.97        82
+        Ripe       0.98      1.00      0.99       253
+      Unripe       1.00      0.99      1.00       200
+
+    accuracy                           0.99       535
+   macro avg       0.99      0.98      0.99       535
+weighted avg       0.99      0.99      0.99       535
+
+
+============================================================
+Classification Report (CNN-RF)
+============================================================
+              precision    recall  f1-score   support
+
+      Reject       1.00      0.93      0.96        82
+        Ripe       0.98      1.00      0.99       253
+      Unripe       1.00      1.00      1.00       200
+
+    accuracy                           0.99       535
+   macro avg       0.99      0.98      0.98       535
+weighted avg       0.99      0.99      0.99       535
+
+
+============================================================
+Classification Report (CNN-KNN (PCA))
+============================================================
+              precision    recall  f1-score   support
+
+      Reject       0.99      0.99      0.99        82
+        Ripe       1.00      1.00      1.00       253
+      Unripe       1.00      0.99      1.00       200
+
+    accuracy                           1.00       535
+   macro avg       0.99      0.99      0.99       535
+weighted avg       1.00      1.00      1.00       535
+
+
+============================================================
+Classification Report (CustomCNN)
+============================================================
+              precision    recall  f1-score   support
+
+      Reject       0.95      0.94      0.94        82
+        Ripe       0.98      0.99      0.98       253
+      Unripe       1.00      0.99      1.00       200
+
+    accuracy                           0.98       535
+   macro avg       0.98      0.97      0.98       535
+weighted avg       0.98      0.98      0.98       535
+

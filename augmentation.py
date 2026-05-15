@@ -32,6 +32,7 @@ def create_augmented_data(X_train, y_train, factor=AUGMENTATION_FACTOR):
         v2.RandomAffine(degrees=0, translate=(0.2, 0.2), scale=(0.8, 1.2)),
         v2.RandomHorizontalFlip(),
         v2.RandomVerticalFlip(),
+        v2.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1),
         v2.ToPILImage()
     ])
 
