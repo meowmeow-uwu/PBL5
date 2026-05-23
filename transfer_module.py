@@ -13,8 +13,8 @@ from config import (
     DATASET_CACHUA_DIR, RESULTS_DIR, BATCH_SIZE, RANDOM_STATE, FINE_TUNE_EPOCHS
 )
 from preprocessing import load_and_preprocess_images, split_dataset
-from augmentation import create_augmented_data
-from model import CustomCNN, preprocess_input, train_cnn, FruitDataset
+import augmentation
+from model import CustomCNN, MobileNetV3Edge, preprocess_input, train_cnn, FruitDataset
 from evaluation import compute_metrics
 from sklearn.metrics import classification_report
 from visualization import plot_confusion_matrices, plot_comparison_chart, print_summary_table
@@ -35,13 +35,13 @@ def main():
     X_tr, X_v, X_te, y_tr, y_v, y_te, le = split_dataset(images, labels, fnames)
     num_classes = len(le.classes_)
     
-    # 3. Augment (Temporarily Disabled)
-    X_tr_aug, y_tr_aug = X_tr, y_tr
-    # X_tr_aug, y_tr_aug = create_augmented_data(X_tr, y_tr)
+    # 3. Augment & Balance (Dynamic and memory efficient)
+    train_indices = augmentation.get_balanced_indices(y_tr)
+    train_transform = augmentation.get_dynamic_transform()
     
     # Use FruitDataset to handle preprocessing on-the-fly (saves memory)
     train_loader = DataLoader(
-        FruitDataset(X_tr_aug, y_tr_aug.astype(np.int64)),
+        FruitDataset(X_tr, y_tr.astype(np.int64), transform=train_transform, indices=train_indices),
         batch_size=BATCH_SIZE, shuffle=True,
         num_workers=4, pin_memory=True
     )
@@ -56,9 +56,9 @@ def main():
     
     # 4. Initialize and Load Checkpoint from Train Module
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    model = CustomCNN(num_classes).to(device)
+    model = MobileNetV3Edge(num_classes, fine_tune=True).to(device)
     
-    base_model_path = os.path.join(RESULTS_DIR, "train_save_model", "base_cnn_best.pth")
+    base_model_path = os.path.join(RESULTS_DIR, "train_save_model", "mobilenet_best.pth")
     if os.path.exists(base_model_path):
         print(f"  => Loading pre-trained base model from {base_model_path}")
         checkpoint = torch.load(base_model_path, map_location=device, weights_only=False)
@@ -66,11 +66,10 @@ def main():
     else:
         print("  => [WARNING] Base model not found! Training from scratch!")
         
-    # Class weights for Reject: 291, Ripe: 716, Unripe: 616
-    # le.classes_ are ['Reject', 'Ripe', 'Unripe'] usually, but let's be safe and check dist
-    counts = np.array([291, 716, 616])
-    total = counts.sum()
-    weights = total / (len(counts) * counts)
+    targets = y_tr[train_indices].astype(np.int64)
+    class_sample_count = np.bincount(targets)
+    weights = 1. / class_sample_count
+    weights = weights / weights.sum() * num_classes
     class_weights = torch.tensor(weights, dtype=torch.float)
     print(f"  => Calculated Class Weights: {weights}")
 
@@ -78,8 +77,9 @@ def main():
     model, history = train_cnn(
         model, train_loader, val_loader,
         epochs=FINE_TUNE_EPOCHS, device=device,
-        checkpoint_dir=save_dir, prefix="transfer_cnn",
-        class_weights=class_weights
+        checkpoint_dir=save_dir, prefix="mobilenet_finetuned",
+        class_weights=class_weights,
+        learning_rate=1e-5
     )
     
     # Evaluate MobileNetV3 directly

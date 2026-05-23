@@ -20,27 +20,33 @@ from config import (
 
 # --- Dataset ---
 class FruitDataset(torch.utils.data.Dataset):
-    def __init__(self, images, labels=None):
+    def __init__(self, images, labels=None, transform=None, indices=None):
         self.images = images  # uint8 images (N, H, W, 3)
         self.labels = labels
+        self.transform = transform
+        self.indices = indices if indices is not None else np.arange(len(images))
 
     def __len__(self):
-        return len(self.images)
+        return len(self.indices)
 
     def __getitem__(self, idx):
-        img = self.images[idx]
+        real_idx = self.indices[idx]
+        img = self.images[real_idx]
         
         # Preprocess on the fly (uint8 -> float32)
         img = img.astype(np.float32) / 255.0
         # Transpose to (C, H, W) for PyTorch
         img = np.transpose(img, (2, 0, 1))
-        # Normalize to [-1, 1]
-        img = (img - 0.5) / 0.5
-        
         img_tensor = torch.from_numpy(img)
         
+        if self.transform is not None:
+            img_tensor = self.transform(img_tensor)
+            
+        # Normalize to [-1, 1] after augmentations that might expect [0,1]
+        img_tensor = (img_tensor - 0.5) / 0.5
+        
         if self.labels is not None:
-            label = torch.tensor(self.labels[idx], dtype=torch.long)
+            label = torch.tensor(self.labels[real_idx], dtype=torch.long)
             return img_tensor, label
         return img_tensor
 
@@ -70,14 +76,18 @@ class FocalLoss(nn.Module):
 
 # --- Define Model ---
 class MobileNetV3Edge(nn.Module):
-    def __init__(self, num_classes):
+    def __init__(self, num_classes, fine_tune=False):
         super(MobileNetV3Edge, self).__init__()
         weights = models.MobileNet_V3_Small_Weights.IMAGENET1K_V1
         self.backbone = models.mobilenet_v3_small(weights=weights)
         
-        # Freeze early layers for Transfer Learning
-        for param in self.backbone.parameters():
-            param.requires_grad = False
+        # Freeze early layers for Transfer Learning, unless fine-tuning
+        if not fine_tune:
+            for param in self.backbone.parameters():
+                param.requires_grad = False
+        else:
+            for param in self.backbone.parameters():
+                param.requires_grad = True
             
         # Replace the final classification layer
         in_features = self.backbone.classifier[-1].in_features
@@ -183,7 +193,8 @@ def train_cnn(
     model, train_loader, val_loader, 
     epochs, device, 
     checkpoint_dir, prefix="model",
-    class_weights=None
+    class_weights=None,
+    learning_rate=None
 ):
     """
     Train CNN with checkpointing and plotting per epoch.
@@ -197,8 +208,9 @@ def train_cnn(
     if class_weights is not None:
         class_weights = class_weights.to(device)
     
+    lr = learning_rate if learning_rate is not None else LEARNING_RATE
     criterion = FocalLoss(weight=class_weights, gamma=2.0)
-    optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE, weight_decay=1e-4)
+    optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=1e-4)
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(
         optimizer, mode='min', factor=0.5, patience=3, min_lr=1e-7
     )

@@ -56,13 +56,13 @@ def main():
     X_tr, X_v, X_te, y_tr, y_v, y_te, le = preprocessing.split_dataset(images, labels, fnames)
     num_classes = len(le.classes_)
     
-    # 3. Augment (Temporarily Disabled)
-    X_tr_aug, y_tr_aug = X_tr, y_tr
-    X_tr_aug, y_tr_aug = augmentation.create_augmented_data(X_tr, y_tr)
+    # 3. Augment & Balance (Dynamic and memory efficient)
+    train_indices = augmentation.get_balanced_indices(y_tr)
+    train_transform = augmentation.get_dynamic_transform()
     
     # 4. DataLoaders (using FruitDataset for memory efficiency)
     train_loader = DataLoader(
-        FruitDataset(X_tr_aug, y_tr_aug.astype(np.int64)),
+        FruitDataset(X_tr, y_tr.astype(np.int64), transform=train_transform, indices=train_indices),
         batch_size=BATCH_SIZE, shuffle=True,
         num_workers=4, pin_memory=True
     )
@@ -79,7 +79,7 @@ def main():
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f"Device: {device}")
     # Calculate class weights
-    targets = y_tr_aug.astype(np.int64)
+    targets = y_tr[train_indices].astype(np.int64)
     class_sample_count = np.bincount(targets)
     weights = 1. / class_sample_count
     weights = weights / weights.sum() * num_classes
@@ -87,15 +87,16 @@ def main():
     print(f"  => Calculated Class Weights: {weights}")
 
     print("\n" + "=" * 60)
-    print("Training MobileNetV3 (Transfer Learning)")
+    print("Training MobileNetV3 (Fine Tuning)")
     print("=" * 60)
-    model_mn = MobileNetV3Edge(num_classes).to(device)
+    model_mn = MobileNetV3Edge(num_classes, fine_tune=True).to(device)
     save_dir_mn = os.path.join(TRAIN_CACHUA_RESULTS_DIR, "train_save_model", "mobilenet")
     model_mn, _ = train_cnn(
         model_mn, train_loader, val_loader,
         epochs=FINE_TUNE_EPOCHS, device=device,
         checkpoint_dir=save_dir_mn, prefix="mobilenet",
-        class_weights=class_weights
+        class_weights=class_weights,
+        learning_rate=1e-5
     )
 
     print("\n" + "=" * 60)
