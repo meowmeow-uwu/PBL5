@@ -11,6 +11,8 @@ import matplotlib.pyplot as plt
 import torch
 import torch.nn as nn
 import torch.optim as optim
+import torch.nn.functional as F
+from torchvision import models
 
 from config import (
     LEARNING_RATE, DROPOUT_1, DROPOUT_2, DENSE_UNITS
@@ -43,7 +45,52 @@ class FruitDataset(torch.utils.data.Dataset):
         return img_tensor
 
 
+# --- Loss Function ---
+class FocalLoss(nn.Module):
+    def __init__(self, weight=None, gamma=2.0, reduction='mean'):
+        super(FocalLoss, self).__init__()
+        self.weight = weight
+        self.gamma = gamma
+        self.reduction = reduction
+
+    def forward(self, inputs, targets):
+        ce_loss_unweighted = F.cross_entropy(inputs, targets, reduction='none')
+        pt = torch.exp(-ce_loss_unweighted)
+        focal_term = (1 - pt) ** self.gamma
+        
+        ce_loss_weighted = F.cross_entropy(inputs, targets, weight=self.weight, reduction='none')
+        focal_loss = focal_term * ce_loss_weighted
+        
+        if self.reduction == 'mean':
+            return focal_loss.mean()
+        elif self.reduction == 'sum':
+            return focal_loss.sum()
+        else:
+            return focal_loss
+
 # --- Define Model ---
+class MobileNetV3Edge(nn.Module):
+    def __init__(self, num_classes):
+        super(MobileNetV3Edge, self).__init__()
+        weights = models.MobileNet_V3_Small_Weights.IMAGENET1K_V1
+        self.backbone = models.mobilenet_v3_small(weights=weights)
+        
+        # Freeze early layers for Transfer Learning
+        for param in self.backbone.parameters():
+            param.requires_grad = False
+            
+        # Replace the final classification layer
+        in_features = self.backbone.classifier[-1].in_features
+        self.backbone.classifier[-1] = nn.Linear(in_features, num_classes)
+        
+        # Make sure the new classifier requires gradients
+        for param in self.backbone.classifier.parameters():
+            param.requires_grad = True
+
+    def forward(self, x):
+        return self.backbone(x)
+
+# --- Define CustomCNN (from scratch) ---
 class CustomCNN(nn.Module):
     def __init__(self, num_classes):
         super(CustomCNN, self).__init__()
@@ -91,12 +138,6 @@ class CustomCNN(nn.Module):
     def forward(self, x):
         x = self.features(x)
         x = self.classifier(x)
-        return x
-        
-    def extract_features(self, x):
-        # Result dimension: 512
-        x = self.features(x)
-        x = torch.flatten(x, 1)
         return x
 
 
@@ -156,7 +197,7 @@ def train_cnn(
     if class_weights is not None:
         class_weights = class_weights.to(device)
     
-    criterion = nn.CrossEntropyLoss(weight=class_weights)
+    criterion = FocalLoss(weight=class_weights, gamma=2.0)
     optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE, weight_decay=1e-4)
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(
         optimizer, mode='min', factor=0.5, patience=3, min_lr=1e-7
@@ -172,15 +213,18 @@ def train_cnn(
     if os.path.exists(last_ckpt_path):
         print(f"  => Resuming from checkpoint: {last_ckpt_path}")
         checkpoint = torch.load(last_ckpt_path, map_location=device, weights_only=False)
-        model.load_state_dict(checkpoint['model_state_dict'])
-        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-        start_epoch = checkpoint['epoch']
-        history = checkpoint['history']
-        best_val_loss = checkpoint.get('best_val_loss', float('inf'))
-        epochs_no_improve = checkpoint.get('epochs_no_improve', 0)
-        if 'scheduler_state_dict' in checkpoint:
-            scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
-        print(f"  => Resumed seamlessly at epoch {start_epoch}")
+        try:
+            model.load_state_dict(checkpoint['model_state_dict'])
+            optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+            start_epoch = checkpoint['epoch']
+            history = checkpoint['history']
+            best_val_loss = checkpoint.get('best_val_loss', float('inf'))
+            epochs_no_improve = checkpoint.get('epochs_no_improve', 0)
+            if 'scheduler_state_dict' in checkpoint:
+                scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
+            print(f"  => Resumed seamlessly at epoch {start_epoch}")
+        except RuntimeError:
+            print("  => [WARNING] Architecture mismatch! Cannot resume from old checkpoint. Starting from scratch.")
 
     if start_epoch >= epochs:
         print(f"  => Training already completed max epochs ({epochs}).")
@@ -288,16 +332,3 @@ def train_cnn(
     return model, history
 
 
-def extract_features_loop(model, dataloader, device):
-    """
-    Extract features directly from CustomCNN GAP layer.
-    """
-    model.eval()
-    feat_list = []
-    with torch.no_grad():
-        for inputs in dataloader:
-            if isinstance(inputs, list) or isinstance(inputs, tuple):
-                inputs = inputs[0]
-            outputs = model.extract_features(inputs.to(device))
-            feat_list.append(outputs.cpu().numpy())
-    return np.vstack(feat_list)
