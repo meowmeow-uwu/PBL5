@@ -1,78 +1,111 @@
-# Tomato Quality Classification (PyTorch)
+# 🍅 Tomato Quality Classification & Real-time AI Server
 
-Hệ thống nhận diện và phân loại mức độ trưởng thành, chất lượng của cà chua bằng công nghệ **Mạng Neural Tích Chập (Custom CNN)** phát triển từ đầu bằng PyTorch, kèm theo các phương pháp **Đánh giá đặc trưng (Machine Learning Classifier)** như SVM, Random Forest và KNN để đánh giá phụ.
+Hệ thống nhận diện và phân loại mức độ chín, chất lượng quả cà chua bằng công nghệ **Mạng Neural Tích Chập (Custom CNN)** phát triển từ đầu bằng PyTorch, kết hợp với các bộ phân lớp Học máy (Machine Learning Classifiers) như SVM, Random Forest và KNN để đánh giá so sánh.
 
-Dự án này đã được chia làm 3 module chính độc lập giúp dễ dàng tinh chỉnh trong các bước khác nhau, với khả năng tự động khôi phục quá trình học (resume training checkpoints).
+Dự án này tích hợp đầy đủ từ khâu huấn luyện mô hình (Training), chuyển giao tri thức (Transfer Learning), nhận diện hình ảnh đơn lẻ (Inference) cho tới việc cung cấp một **AI Server độc lập** kết nối trực tiếp với băng tải phân loại IoT (ESP32-CAM).
 
-## Cấu trúc Dự án
+---
 
-```
+## 📂 Cấu Trúc Dự Án
+
+```text
 .
-├── train_module.py      # Huấn luyện mô hình từ Dataset cơ bản
-├── transfer_module.py   # Kế thừa kết quả (Transfer Learning) cho Dataset_Cachua
-├── predict_module.py    # Nhận diện tự động chuẩn đoán bệnh/chất lượng cho từng tấm ảnh
-├── model.py             # Định nghĩa cấu trúc Neural Network CustomCNN và Training Loop 
-├── preprocessing.py     # Cắt nền ảnh (Background Cancellation) sử dụng OpenCV
-├── augmentation.py      # Nhanh bản và lật mở dữ liệu ảnh dùng Torchvision Transforms
-├── classifiers.py       # Tập hợp các thuật toán Machine Learning
-├── visualization.py     # Xuất các biểu đồ trực quan (như confusion matrix)
-└── config.py            # Cấu hình các tham số hyper-parameters
+├── AI-SERVER/            # Module AI Server độc lập kết nối ESP32 & Web Backend
+├── Dataset/              # Thư mục chứa tập dữ liệu gốc (3 phân lớp)
+├── Dataset_Cachua/       # Thư mục chứa tập dữ liệu mới phục vụ Transfer Learning
+├── results/              # Thư mục lưu kết quả huấn luyện (trọng số, biểu đồ)
+├── config.py             # Cấu hình siêu tham số (Hyper-parameters)
+├── model.py              # Định nghĩa lớp CustomCNN và vòng lặp huấn luyện PyTorch
+├── preprocessing.py      # Tiền xử lý ảnh (Background Cancellation tách nền bằng OpenCV)
+├── augmentation.py       # Tăng cường dữ liệu (Data Augmentation bằng Torchvision)
+├── train_module.py       # Module huấn luyện mô hình CustomCNN cơ sở (Base model)
+├── transfer_module.py    # Module Transfer Learning trên tập dữ liệu cà chua mới
+├── predict_module.py     # Module nhận diện đơn lẻ cho một bức ảnh từ Terminal
+├── classifiers.py        # Thử nghiệm trích xuất đặc trưng với các bộ phân lớp ML (SVM, RF, KNN)
+├── visualization.py      # Xuất biểu đồ phân tích (Confusion Matrix, Loss/Acc curves)
+├── .env.example          # Tệp cấu hình đường dẫn mẫu cho dự án gốc
+└── README.md             # Hướng dẫn sử dụng dự án
 ```
 
-## Tính năng
+---
 
-- **Kiến trúc Tự Định Nghĩa (Custom CNN)** gồm *5 Khối Feature* (Conv2D -> BatchNorm -> ReLU -> MaxPool) nối tiếp nhau, rút trích vector đặc trưng thành 512D.
-- **Tiền Xử Lý (Background Cancellation)** thông minh: Dùng thuật toán Otsu Threshold kết hợp với Morphological Operations qua nhánh Red/Green nhằm loại bỏ hoàn toàn các phông nền gây nhiễu, tập trung vào quả Cà Chua.
-- **Trở lại sau Sự cố (Epoch Resuming)**: `train_module` và `transfer_module` sẽ tự động ghi nhớ trạng thái optimizer, params, giá trị loss từng epoch dưới định dạng `_last.pth`. Nếu chương trình bị sự cố ngắt giữa chừng, bạn chỉ cần gõ lại lệnh, module tự động học tiếp từ điểm ngắt đó thay vì lặp lại từ epoch số 0.
-- **Real-time Charting**: Biểu đồ Accuracy/Loss lập tức xuất file `.png` (ở thư mục `results/`) mỗi khi kết thúc 1 epoch. Không cần đợi toàn bộ lịch trình học kết thúc.
-- **Xác thực kết quả nâng cao**: Extract 512D Features qua không gian MLearrning: (KNN kèm PCA), RandomForest và SVM Kernels.
+## 🛠 Hướng Dẫn Cài Đặt (Installation)
 
-## Hướng dẫn Sử dụng (Workflow)
+### 1. Chuẩn bị môi trường
+Dự án được quản lý gói bằng công cụ hiện đại `uv`. Bạn có thể cài đặt các dependencies tự động:
 
-Bạn cần tải xuống toàn bộ dependencies bằng cách sử dụng `uv`:
 ```bash
-uv sync   # Sẽ cài đặt toàn bộ Torch + Torchvision + Scikit-Learn + OpenCV
+# Cài đặt toàn bộ môi trường ảo và thư viện thông qua uv
+uv sync
 ```
 
-### 1. Training Mặc định (Base Training)
+Hoặc sử dụng cách truyền thống bằng `pip` (khuyên dùng tạo môi trường ảo trước):
 
-Dùng để huấn luyện CustomCNN trên tập dữ liệu ban đầu. Tham số đường dẫn và Epoch nằm trong `config.py` ở thẻ `DATASET_DIR`.
+```bash
+# Tạo môi trường ảo
+python -m venv .venv
+# Kích hoạt môi trường ảo (Windows)
+.venv\Scripts\activate
+# Cài đặt các thư viện cần thiết
+pip install torch torchvision opencv-python scikit-learn matplotlib requests flask minio python-dotenv
+```
+
+### 2. Cấu hình biến môi trường
+Tạo tệp `.env` tại thư mục gốc bằng cách sao chép từ tệp mẫu:
+
+```bash
+copy .env.example .env
+```
+
+Mở tệp `.env` vừa tạo và chỉnh sửa các đường dẫn thư mục dữ liệu trên máy của bạn:
+*   `DATASET_DIR`: Đường dẫn tới tập dữ liệu huấn luyện cơ sở (gồm 3 thư mục con `Reject`, `Ripe`, `Unripe`).
+*   `DATASET_CACHUA_DIR`: Đường dẫn tới tập dữ liệu cà chua mới dùng để Transfer Learning.
+*   `RESULTS_DIR`: Nơi lưu trữ trọng số mô hình và các biểu đồ phân tích (mặc định là `./results`).
+
+---
+
+## 💻 Hướng Dẫn Sử Dụng (Usage Workflow)
+
+### **Bước 1: Huấn luyện mô hình cơ sở (Base Training)**
+Chạy script huấn luyện để dạy mô hình `CustomCNN` phân loại trên tập dữ liệu cơ sở:
 
 ```bash
 python train_module.py
 ```
-- Module sẽ lưu mô hình tốt nhất vào: `results/train_save_model/base_cnn_best.pth`
-- Biểu đồ và thông báo sẽ được lưu lại đồng thời trong đường dẫn này.
+*   **Đặc điểm**: Chương trình tự động lưu trọng số mô hình có độ chính xác cao nhất trên tập validation vào `results/train_save_model/base_cnn_best.pth`.
+*   **Epoch Resuming (Tự khôi phục)**: Nếu tiến trình học bị ngắt đột ngột (mất điện, tắt terminal), bạn chỉ cần chạy lại lệnh trên. Chương trình sẽ tự động tải checkpoint `_last.pth` và tiếp tục huấn luyện từ epoch bị ngắt.
+*   **Xuất đồ thị**: Biểu đồ Accuracy/Loss (`base_cnn_history.png`) được cập nhật trực tiếp sau mỗi epoch.
 
-### 2. Transfer Learning trên Dataset_Cachua
-
-Sau khi bạn đã hoàn thiện Base Training, hệ thống cho phép kế thừa các kinh nghiệm trích xuất vector thông qua Transfer Learning nhằm áp dụng cho biến thể dữ liệu mới hoặc môi trường hình ảnh mới nằm tại `DATASET_CACHUA_DIR`.
+### **Bước 2: Huấn luyện chuyển giao (Transfer Learning)**
+Huấn luyện mô hình trên tập dữ liệu cà chua mới (`DATASET_CACHUA_DIR`) bằng cách kế thừa các đặc trưng đã học từ mô hình cơ sở:
 
 ```bash
 python transfer_module.py
 ```
-- Tự động lấy file `base_cnn` làm móng.
-- Thực hiện training cho riêng bài toán mới và cho ra `results/transfer_save_model/transfer_cnn_best.pth`
+*   Chương trình sẽ tự động lấy trọng số từ `base_cnn_best.pth`, đóng băng phần trích xuất đặc trưng và chỉ tối ưu hóa các lớp phân loại cuối cùng cho bài toán mới.
+*   Kết quả lưu trữ tại `results/transfer_save_model/transfer_cnn_best.pth`.
 
-
-### 3. Phân Đoán / Suy đổi Trực tiếp (Inference)
-
-Khi bạn muốn đưa một hình ảnh thực tế (ảnh 1 quả trứng cà chua) chụp ngoài màn hình vào để CNN nhận định xem đây là **Reject**, **Ripe**, hay **Unripe**:
+### **Bước 3: Nhận diện ảnh đơn lẻ từ Terminal (Inference)**
+Nếu bạn muốn kiểm tra nhanh kết quả nhận diện của mô hình đối với một bức ảnh cà chua đơn lẻ:
 
 ```bash
-python predict_module.py --image "Đường/dẫn/tới/anhthon.jpg"
-```
-**Option 2:** (Tuỳ chỉnh trọng số nếu bắt gặp file custom weights)
-```bash
-python predict_module.py --image "test.jpg" --model "results/train_save_model/base_cnn_last.pth"
-```
+# Chạy dự đoán với mô hình mặc định (Transfer Learning model)
+python predict_module.py --image "duong_dan_anh_ca_chua.jpg"
 
-Quá trình sẽ diễn ra hoàn toàn tương đương với lúc Training do module sẽ gọi thẳng hàm `background_cancellation` cắt nền trước khi đưa vào PyTorch.
-Khung xác suất (Probability Logits) cho 3 classes sẽ được hiển thị ngay tại Terminal.  
+# Hoặc tùy chỉnh chỉ định tệp trọng số mô hình khác
+python predict_module.py --image "duong_dan_anh_ca_chua.jpg" --model "results/train_save_model/base_cnn_best.pth"
+```
+*   Ảnh thô sẽ tự động được đưa qua hàm `background_cancellation` tách nền, chuẩn hóa kích thước thành 299x299 trước khi đưa vào PyTorch dự đoán.
+*   Terminal sẽ hiển thị xác suất (probability) cụ thể của cả 3 nhãn.
 
-## Cấu hình (Configurations)
-Hiệu chỉnh toàn bộ parameters thông qua `config.py`:
-- `IMG_SIZE = 299`: Kích thước Resize
-- `FINE_TUNE_EPOCHS = 30`: Tổng lượng Epoch
-- `BATCH_SIZE = 32`: Lượng data đẩy vào VRAM GPU cùng 1 thời điểm.
-- Thuật toán KNN điều chỉnh số lượng thông số Neighbor, cấu hình Threshold Kernels tương ứng.
+---
+
+## ⚡️ AI Server Kết Nối Hệ Thống Phân Loại IoT
+
+Thư mục **`AI-SERVER`** chứa một máy chủ độc lập dùng để kết nối trực tiếp với board mạch **ESP32-CAM** trên băng tải phân loại thực tế.
+
+*   **Tính năng chính**:
+    *   Sử dụng **HTTP Keep-Alive** giúp duy trì kết nối mạng tốc độ cao với camera.
+    *   Tích hợp đa luồng (**Multi-threading**): Phân loại ảnh bằng PyTorch và trả kết quả ngay lập tức cho camera để băng tải hoạt động ổn định. Tác vụ đẩy ảnh lên **MinIO** và gọi Web Backend API được chạy ngầm dưới nền.
+*   **Cách sử dụng**:
+    Xem chi tiết hướng dẫn chạy và cấu hình API tại [README.md của AI-SERVER](file:///e:/python_project/PBL5/AI-SERVER/README.md).
