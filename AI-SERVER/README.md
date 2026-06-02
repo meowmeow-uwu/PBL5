@@ -43,7 +43,8 @@
 
 Khởi chạy máy chủ AI bằng lệnh:
 ```bash
-python app.py
+uv run app.py
+# Hoặc: python app.py
 ```
 
 Khi chạy thành công, màn hình sẽ hiển thị:
