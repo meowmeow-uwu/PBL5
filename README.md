@@ -70,7 +70,8 @@ Mở tệp `.env` vừa tạo và chỉnh sửa các đường dẫn thư mục 
 Chạy script huấn luyện để dạy mô hình `CustomCNN` phân loại trên tập dữ liệu cơ sở:
 
 ```bash
-python train_module.py
+uv run train_module.py
+# Hoặc: python train_module.py
 ```
 *   **Đặc điểm**: Chương trình tự động lưu trọng số mô hình có độ chính xác cao nhất trên tập validation vào `results/train_save_model/base_cnn_best.pth`.
 *   **Epoch Resuming (Tự khôi phục)**: Nếu tiến trình học bị ngắt đột ngột (mất điện, tắt terminal), bạn chỉ cần chạy lại lệnh trên. Chương trình sẽ tự động tải checkpoint `_last.pth` và tiếp tục huấn luyện từ epoch bị ngắt.
@@ -80,7 +81,8 @@ python train_module.py
 Huấn luyện mô hình trên tập dữ liệu cà chua mới (`DATASET_CACHUA_DIR`) bằng cách kế thừa các đặc trưng đã học từ mô hình cơ sở:
 
 ```bash
-python transfer_module.py
+uv run transfer_module.py
+# Hoặc: python transfer_module.py
 ```
 *   Chương trình sẽ tự động lấy trọng số từ `base_cnn_best.pth`, đóng băng phần trích xuất đặc trưng và chỉ tối ưu hóa các lớp phân loại cuối cùng cho bài toán mới.
 *   Kết quả lưu trữ tại `results/transfer_save_model/transfer_cnn_best.pth`.
@@ -90,9 +92,9 @@ Nếu bạn muốn kiểm tra nhanh kết quả nhận diện của mô hình đ
 
 ```bash
 # Chạy dự đoán với mô hình mặc định (Transfer Learning model)
-python predict_module.py --image "duong_dan_anh_ca_chua.jpg"
+uv run predict_module.py --image "duong_dan_anh_ca_chua.jpg"
 
-# Hoặc tùy chỉnh chỉ định tệp trọng số mô hình khác
+# Hoặc sử dụng lệnh python truyền thống với chỉ định tệp trọng số mô hình khác
 python predict_module.py --image "duong_dan_anh_ca_chua.jpg" --model "results/train_save_model/base_cnn_best.pth"
 ```
 *   Ảnh thô sẽ tự động được đưa qua hàm `background_cancellation` tách nền, chuẩn hóa kích thước thành 299x299 trước khi đưa vào PyTorch dự đoán.
