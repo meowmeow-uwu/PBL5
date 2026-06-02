@@ -112,7 +112,9 @@ def load_and_preprocess_images(dataset_dir=DATASET_DIR, img_size=IMG_SIZE,
     images, labels = [], []
     samples = {}
     
-    with ProcessPoolExecutor() as executor:
+    # Giới hạn tối đa 4 tiến trình con để tránh tràn bộ nhớ ảo (Paging file / Virtual Memory) trên Windows
+    max_workers = min(4, os.cpu_count() or 1)
+    with ProcessPoolExecutor(max_workers=max_workers) as executor:
         results = list(executor.map(_process_single_image, tasks))
         
     for roi_rgb, cls, orig_resnet in results:
