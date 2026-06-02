@@ -41,16 +41,16 @@ def main():
     train_loader = DataLoader(
         FruitDataset(X_tr_aug, y_tr_aug.astype(np.int64)),
         batch_size=BATCH_SIZE, shuffle=True,
-        num_workers=4, pin_memory=True
+        num_workers=0, pin_memory=True
     )
     val_loader = DataLoader(
         FruitDataset(X_v, y_v.astype(np.int64)),
         batch_size=BATCH_SIZE, shuffle=False,
-        num_workers=4, pin_memory=True
+        num_workers=0, pin_memory=True
     )
     
-    train_orig_loader = DataLoader(FruitDataset(X_tr), batch_size=BATCH_SIZE, shuffle=False, num_workers=4, pin_memory=True)
-    test_loader = DataLoader(FruitDataset(X_te), batch_size=BATCH_SIZE, shuffle=False, num_workers=4, pin_memory=True)
+    train_orig_loader = DataLoader(FruitDataset(X_tr), batch_size=BATCH_SIZE, shuffle=False, num_workers=0, pin_memory=True)
+    test_loader = DataLoader(FruitDataset(X_te), batch_size=BATCH_SIZE, shuffle=False, num_workers=0, pin_memory=True)
     
     # 4. Train Custom CNN
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
