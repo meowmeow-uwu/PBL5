@@ -100,40 +100,69 @@ class MobileNetV3Edge(nn.Module):
     def forward(self, x):
         return self.backbone(x)
 
+    def extract_features(self, x):
+        x = self.backbone.features(x)
+        x = self.backbone.avgpool(x)
+        x = torch.flatten(x, 1)
+        for i in range(len(self.backbone.classifier) - 1):
+            x = self.backbone.classifier[i](x)
+        return x
+
 # --- Define CustomCNN (from scratch) ---
 class CustomCNN(nn.Module):
-    def __init__(self, num_classes):
+    def __init__(self, num_classes, has_dropout=True):
         super(CustomCNN, self).__init__()
-        self.features = nn.Sequential(
+        layers = []
+        
+        # Conv 1
+        layers.extend([
             nn.Conv2d(3, 32, kernel_size=3, padding=1),
             nn.BatchNorm2d(32),
             nn.ReLU(),
             nn.MaxPool2d(kernel_size=2, stride=2),
-            nn.Dropout2d(0.1),
+        ])
+        if has_dropout:
+            layers.append(nn.Dropout2d(0.1))
             
+        # Conv 2
+        layers.extend([
             nn.Conv2d(32, 64, kernel_size=3, padding=1),
             nn.BatchNorm2d(64),
             nn.ReLU(),
             nn.MaxPool2d(kernel_size=2, stride=2),
-            nn.Dropout2d(0.1),
+        ])
+        if has_dropout:
+            layers.append(nn.Dropout2d(0.1))
             
+        # Conv 3
+        layers.extend([
             nn.Conv2d(64, 128, kernel_size=3, padding=1),
             nn.BatchNorm2d(128),
             nn.ReLU(),
             nn.MaxPool2d(kernel_size=2, stride=2),
-            nn.Dropout2d(0.2),
+        ])
+        if has_dropout:
+            layers.append(nn.Dropout2d(0.2))
             
+        # Conv 4
+        layers.extend([
             nn.Conv2d(128, 256, kernel_size=3, padding=1),
             nn.BatchNorm2d(256),
             nn.ReLU(),
             nn.MaxPool2d(kernel_size=2, stride=2),
-            nn.Dropout2d(0.2),
+        ])
+        if has_dropout:
+            layers.append(nn.Dropout2d(0.2))
             
+        # Conv 5
+        layers.extend([
             nn.Conv2d(256, 512, kernel_size=3, padding=1),
             nn.BatchNorm2d(512),
             nn.ReLU(),
             nn.AdaptiveAvgPool2d((1, 1)) # Global Average Pooling
-        )
+        ])
+        
+        self.features = nn.Sequential(*layers)
         
         self.classifier = nn.Sequential(
             nn.Flatten(),
@@ -150,22 +179,15 @@ class CustomCNN(nn.Module):
         x = self.classifier(x)
         return x
 
+    def extract_features(self, x):
+        x = self.features(x)
+        x = torch.flatten(x, 1)
+        return x
+
 
 def preprocess_input(X):
     """
     Standardize NumPy images for PyTorch CustomCNN.
-    Supports both single images (H, W, 3) and batches (N, H, W, 3).
-    """
-    if X.ndim == 3:
-        # Single image
-        X = X.astype(np.float32) / 255.0
-        X = np.transpose(X, (2, 0, 1))
-        X = (X - 0.5) / 0.5
-    else:
-        # Batch
-        X = X.astype(np.float32) / 255.0
-        X = np.transpose(X, (0, 3, 1, 2))
-        X = (X - 0.5) / 0.5
     Supports both single images (H, W, 3) and batches (N, H, W, 3).
     """
     if X.ndim == 3:
@@ -224,7 +246,6 @@ def train_cnn(
     criterion = FocalLoss(weight=class_weights, gamma=2.0)
     optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=1e-4)
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer, mode='min', factor=0.5, patience=3, min_lr=1e-7
         optimizer, mode='min', factor=0.5, patience=3, min_lr=1e-7
     )
 
@@ -355,5 +376,21 @@ def train_cnn(
     
     print(f"  Finished training workflow. Models are in: {checkpoint_dir}")
     return model, history
+
+
+def extract_features_loop(model, dataloader, device):
+    """
+    Extract features directly from the model's GAP/feature layer.
+    """
+    model.eval()
+    feat_list = []
+    with torch.no_grad():
+        for inputs in dataloader:
+            if isinstance(inputs, list) or isinstance(inputs, tuple):
+                inputs = inputs[0]
+            outputs = model.extract_features(inputs.to(device))
+            feat_list.append(outputs.cpu().numpy())
+    return np.vstack(feat_list)
+
 
 
