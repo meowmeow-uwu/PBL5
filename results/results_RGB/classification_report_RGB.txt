@@ -63,12 +63,12 @@ Classification Report (PaperCNN)
 ============================================================
               precision    recall  f1-score   support
 
-      Reject       0.91      0.93      0.92        55
-        Ripe       0.95      0.95      0.95        81
+      Reject       0.91      0.91      0.91        55
+        Ripe       0.94      0.95      0.94        81
       Unripe       1.00      0.98      0.99        63
 
     accuracy                           0.95       199
    macro avg       0.95      0.95      0.95       199
-weighted avg       0.96      0.95      0.95       199
+weighted avg       0.95      0.95      0.95       199
 
 

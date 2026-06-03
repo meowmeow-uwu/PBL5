@@ -1,0 +1,7 @@
+{
+    "model_name": "SVM",
+    "color_space": "LAB",
+    "accuracy": 97.98994974874373,
+    "model_path": "results/results_LAB/svm_best.pkl",
+    "model_type": "ml"
+}
