@@ -128,7 +128,9 @@ def main():
                 'precision': metrics['precision'] * 100,
                 'recall': metrics['recall'] * 100,
                 'f1_score': metrics['f1_score'] * 100,
-                'channel_importances': metrics.get('channel_importances', [33.33, 33.33, 33.33])
+                'channel_importances': metrics.get('channel_importances', [33.33, 33.33, 33.33]),
+                'train_time': metrics.get('train_time', 0.0),
+                'inference_time': metrics.get('inference_time', 0.0)
             }
         
         print(f"\n  Finished Pipeline for {color_space}. Results saved to {CS_RESULTS_DIR}")
