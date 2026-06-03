@@ -100,6 +100,14 @@ class MobileNetV3Edge(nn.Module):
     def forward(self, x):
         return self.backbone(x)
 
+    def extract_features(self, x):
+        x = self.backbone.features(x)
+        x = self.backbone.avgpool(x)
+        x = torch.flatten(x, 1)
+        for i in range(len(self.backbone.classifier) - 1):
+            x = self.backbone.classifier[i](x)
+        return x
+
 # --- Define CustomCNN (from scratch) ---
 class CustomCNN(nn.Module):
     def __init__(self, num_classes):
@@ -148,6 +156,11 @@ class CustomCNN(nn.Module):
     def forward(self, x):
         x = self.features(x)
         x = self.classifier(x)
+        return x
+
+    def extract_features(self, x):
+        x = self.features(x)
+        x = torch.flatten(x, 1)
         return x
 
 
@@ -342,5 +355,21 @@ def train_cnn(
     
     print(f"  Finished training workflow. Models are in: {checkpoint_dir}")
     return model, history
+
+
+def extract_features_loop(model, dataloader, device):
+    """
+    Extract features directly from the model's GAP/feature layer.
+    """
+    model.eval()
+    feat_list = []
+    with torch.no_grad():
+        for inputs in dataloader:
+            if isinstance(inputs, list) or isinstance(inputs, tuple):
+                inputs = inputs[0]
+            outputs = model.extract_features(inputs.to(device))
+            feat_list.append(outputs.cpu().numpy())
+    return np.vstack(feat_list)
+
 
 
