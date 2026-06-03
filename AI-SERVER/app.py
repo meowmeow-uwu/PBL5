@@ -14,7 +14,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Import cục bộ từ các tệp tiện ích trong thư mục AI-SERVER
-from model_utils import CustomCNN, preprocess_input
+from model_utils import CustomCNN, MobileNetV3Edge, preprocess_input
 from preprocessing_utils import background_cancellation
 
 app = Flask(__name__)
@@ -56,19 +56,33 @@ except Exception as e:
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 print(f"[INFO] Using device: {device}")
 
-# Tải mô hình PyTorch CustomCNN
+# Tải mô hình PyTorch (Tự động nhận diện cấu trúc CustomCNN/MobileNetV3Edge)
 num_classes = len(CLASS_NAMES)
-model = CustomCNN(num_classes).to(device)
+model = None
 
 if os.path.exists(MODEL_PATH):
     print(f"[INFO] Loading model weights from: {MODEL_PATH}")
     checkpoint = torch.load(MODEL_PATH, map_location=device, weights_only=False)
-    if 'model_state_dict' in checkpoint:
-        model.load_state_dict(checkpoint['model_state_dict'])
-    else:
-        model.load_state_dict(checkpoint)
+    state_dict = checkpoint['model_state_dict'] if 'model_state_dict' in checkpoint else checkpoint
+    
+    try:
+        model = CustomCNN(num_classes, has_dropout=True).to(device)
+        model.load_state_dict(state_dict)
+        print("[INFO] Loaded CustomCNN (with dropout) successfully.")
+    except RuntimeError as e:
+        print("[INFO] Retrying CustomCNN without dropout...")
+        try:
+            model = CustomCNN(num_classes, has_dropout=False).to(device)
+            model.load_state_dict(state_dict)
+            print("[INFO] Loaded CustomCNN (without dropout) successfully.")
+        except RuntimeError as e2:
+            print("[INFO] Retrying MobileNetV3Edge...")
+            model = MobileNetV3Edge(num_classes, fine_tune=False).to(device)
+            model.load_state_dict(state_dict)
+            print("[INFO] Loaded MobileNetV3Edge successfully.")
+            
     model.eval()
-    print("[INFO] Model loaded successfully.")
+    print("[INFO] Model loaded and set to evaluation mode successfully.")
 else:
     print(f"[ERROR] Model path not found: {MODEL_PATH}")
 
@@ -100,9 +114,9 @@ def process_background_tasks(image_bytes, request_id, result_label, confidence):
         requests.post(BACKEND_API_URL, json=backend_payload, timeout=5)
         
         t_end = time.time()
-        print(f"[BG LOG] [{request_id}] Thành công! Upload MinIO + Gọi Backend xong (Tổng thời gian chạy ngầm: {t_end - t_start:.2f}s)")
+        print(f"[BG LOG] [{request_id}] Success! Uploaded to MinIO + Called Backend (Total bg time: {t_end - t_start:.2f}s)")
     except Exception as e:
-        print(f"[BG ERROR] [{request_id}] Lỗi xử lý ngầm: {e}")
+        print(f"[BG ERROR] [{request_id}] Background processing error: {e}")
 
 # --- API ENDPOINT ---
 @app.route('/predict', methods=['POST'])
@@ -117,7 +131,7 @@ def predict():
         if not file or not request_id:
             return jsonify({"error": "Missing id or image"}), 400
 
-        print(f"[LOG] [{request_id}] 1. Nhận được ảnh từ ESP32.")
+        print(f"[LOG] [{request_id}] 1. Received image from ESP32.")
         
         # Đọc dữ liệu nhị phân của ảnh
         file_bytes = file.read()
@@ -150,7 +164,7 @@ def predict():
         result_label = predicted_class.upper()
 
         t_processed = time.time()
-        print(f"[LOG] [{request_id}] 2. Phân loại xong: {result_label} ({confidence*100:.1f}%) - Thời gian xử lý: {t_processed - t_received:.2f}s")
+        print(f"[LOG] [{request_id}] 2. Classification done: {result_label} ({confidence*100:.1f}%) - Processing time: {t_processed - t_received:.2f}s")
 
         # 4. Kích hoạt luồng phụ để thực hiện upload MinIO & Gọi Backend API (Không chặn ESP32)
         bg_thread = threading.Thread(
@@ -161,7 +175,7 @@ def predict():
 
         # 5. Trả kết quả lập tức cho ESP32-CAM
         t_response = time.time()
-        print(f"[LOG] [{request_id}] 3. Trả kết quả về ESP32. (Thời gian phản hồi HTTP: {t_response - t_received:.2f}s)")
+        print(f"[LOG] [{request_id}] 3. Returned result to ESP32. (HTTP response time: {t_response - t_received:.2f}s)")
         return jsonify({
             "id": int(request_id),
             "result": result_label,

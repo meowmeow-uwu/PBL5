@@ -157,7 +157,6 @@ def load_and_preprocess_images(dataset_dir=DATASET_DIR, img_size=IMG_SIZE,
         files = [f for f in os.listdir(path)
                  if f.lower().endswith(('.jpg', '.jpeg', '.png', '.bmp'))]
         print(f"  {cls}: {len(files)} images ...")
-        print(f"  {cls}: {len(files)} images ...")
         for fname in files:
             tasks.append((path, fname, cls, img_size))
 
@@ -176,9 +175,7 @@ def load_and_preprocess_images(dataset_dir=DATASET_DIR, img_size=IMG_SIZE,
             fnames.append(fname)
             if cls not in samples:
                 samples[cls] = {'original': orig_resnet, 'preprocessed': roi_rgb}
-                samples[cls] = {'original': orig_resnet, 'preprocessed': roi_rgb}
 
-    print("[OK]")
     print("[OK]")
 
     if save_samples and samples:

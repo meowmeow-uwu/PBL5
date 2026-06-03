@@ -49,13 +49,8 @@ def main():
         FruitDataset(X_v, y_v.astype(np.int64)),
         batch_size=BATCH_SIZE, shuffle=False,
         num_workers=4, pin_memory=True
-        FruitDataset(X_v, y_v.astype(np.int64)),
-        batch_size=BATCH_SIZE, shuffle=False,
-        num_workers=4, pin_memory=True
     )
     
-    train_orig_loader = DataLoader(FruitDataset(X_tr), batch_size=BATCH_SIZE, shuffle=False, num_workers=4, pin_memory=True)
-    test_loader = DataLoader(FruitDataset(X_te), batch_size=BATCH_SIZE, shuffle=False, num_workers=4, pin_memory=True)
     train_orig_loader = DataLoader(FruitDataset(X_tr), batch_size=BATCH_SIZE, shuffle=False, num_workers=4, pin_memory=True)
     test_loader = DataLoader(FruitDataset(X_te), batch_size=BATCH_SIZE, shuffle=False, num_workers=4, pin_memory=True)
     
