@@ -1,35 +1,96 @@
 import numpy as np
 import cv2
 
-def background_cancellation(image):
-    """
-    Loại bỏ nền bằng phương pháp phân ngưỡng Otsu trên kênh màu Đỏ và Xanh lá,
-    kết hợp các phép toán hình thái học (morphological operations) để lấy ROI quả cà chua.
-    """
-    _, green, red = cv2.split(image)  # OpenCV sử dụng hệ màu BGR
-
-    # Phân ngưỡng Otsu
-    _, mask_red = cv2.threshold(red, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-    _, mask_green = cv2.threshold(green, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-
-    # Kết hợp hai mặt nạ bằng phép toán OR
-    combined = cv2.bitwise_or(mask_red, mask_green)
-
-    # Đóng hình thái học (Morphological closing) để lấp các lỗ nhỏ bên trong
-    kernel_large = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (15, 15))
-    combined = cv2.morphologyEx(combined, cv2.MORPH_CLOSE, kernel_large, iterations=3)
-
-    # Flood-fill để lấp đầy toàn bộ vùng rỗng bên trong quả
-    flood = combined.copy()
-    h, w = flood.shape[:2]
-    flood_mask = np.zeros((h + 2, w + 2), np.uint8)
-    cv2.floodFill(flood, flood_mask, (0, 0), 255)
-    combined = cv2.bitwise_or(combined, cv2.bitwise_not(flood))
-
-    # Mở hình thái học (Morphological opening) để lọc bỏ nhiễu hạt bên ngoài
+def background_cancellation(image, img_size=299):
+    hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+    
+    # 1. TẠO MẶT NẠ MÀU VÀ LẤP LỖ HỔNG (Giữ nguyên như bản trước)
+    lower_red = np.array([0, 30, 50])
+    upper_red = np.array([30, 255, 255])
+    lower_red_wrap = np.array([160, 30, 50])
+    upper_red_wrap = np.array([180, 255, 255])
+    lower_green = np.array([30, 30, 50])
+    upper_green = np.array([60, 255, 255])
+    
+    mask = cv2.inRange(hsv, lower_red, upper_red)
+    mask |= cv2.inRange(hsv, lower_red_wrap, upper_red_wrap)
+    mask |= cv2.inRange(hsv, lower_green, upper_green)
+    
     kernel_small = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
-    combined = cv2.morphologyEx(combined, cv2.MORPH_OPEN, kernel_small, iterations=2)
+    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel_small)
+    
+    kernel_medium = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (15, 15))
+    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel_medium)
+    
+    contours_temp, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    solid_mask = np.zeros_like(mask)
+    if contours_temp:
+        for cnt in contours_temp:
+            if cv2.contourArea(cnt) > 500:
+                cv2.drawContours(solid_mask, [cnt], -1, 255, thickness=cv2.FILLED)
+    mask = solid_mask
 
-    # Trộn ảnh gốc với mặt nạ để trích xuất ảnh ROI
-    mask_3ch = cv2.merge([combined, combined, combined])
-    return cv2.bitwise_and(image, mask_3ch)
+    # ---------------------------------------------------------
+    # 2. VŨ KHÍ TỐI THƯỢNG: CENTER BIAS (Khoảng cách tới tâm)
+    # ---------------------------------------------------------
+    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    if not contours:
+        return cv2.resize(image, (img_size, img_size))
+        
+    H, W = image.shape[:2]
+    center_x, center_y = W // 2, H // 2  # Tọa độ tâm của bức ảnh
+    
+    best_cnt = None
+    min_dist = float('inf')
+    
+    for cnt in contours:
+        # Bỏ qua các hạt bụi hoặc nhiễu quá nhỏ
+        if cv2.contourArea(cnt) < 1000:
+            continue
+            
+        # Tính Trọng tâm (Centroid) của khối màu bằng cv2.moments
+        M = cv2.moments(cnt)
+        if M["m00"] != 0:
+            cx = int(M["m10"] / M["m00"])
+            cy = int(M["m01"] / M["m00"])
+        else:
+            cx, cy = 0, 0
+            
+        # Tính khoảng cách từ Trọng tâm vật thể tới Tâm bức ảnh
+        dist = (cx - center_x)**2 + (cy - center_y)**2
+        
+        # Chọn vật thể CÓ KHOẢNG CÁCH GẦN TÂM NHẤT
+        if dist < min_dist:
+            min_dist = dist
+            best_cnt = cnt
+            
+    # Nếu lọc xong không còn gì, trả về ảnh gốc
+    if best_cnt is None:
+        return cv2.resize(image, (img_size, img_size))
+    
+    # ---------------------------------------------------------
+    # 3. CẮT CÚP & PADDING (Giữ nguyên)
+    # ---------------------------------------------------------
+    x, y, w, h = cv2.boundingRect(best_cnt)
+    x, y = max(0, x), max(0, y)
+    w, h = min(W - x, w), min(H - y, h)
+    
+    cropped_roi = image[y:y+h, x:x+w]
+    cropped_mask = mask[y:y+h, x:x+w]
+    
+    roi_bg_removed = cv2.bitwise_and(cropped_roi, cropped_roi, mask=cropped_mask)
+    
+    h_crop, w_crop = roi_bg_removed.shape[:2]
+    max_side = max(h_crop, w_crop)
+    
+    top = (max_side - h_crop) // 2
+    bottom = max_side - h_crop - top
+    left = (max_side - w_crop) // 2
+    right = max_side - w_crop - left
+    
+    squared_img = cv2.copyMakeBorder(
+        roi_bg_removed, top, bottom, left, right, 
+        cv2.BORDER_CONSTANT, value=[0, 0, 0]
+    )
+    
+    return cv2.resize(squared_img, (img_size, img_size))
