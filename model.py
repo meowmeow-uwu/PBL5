@@ -110,38 +110,59 @@ class MobileNetV3Edge(nn.Module):
 
 # --- Define CustomCNN (from scratch) ---
 class CustomCNN(nn.Module):
-    def __init__(self, num_classes):
+    def __init__(self, num_classes, has_dropout=True):
         super(CustomCNN, self).__init__()
-        self.features = nn.Sequential(
+        layers = []
+        
+        # Conv 1
+        layers.extend([
             nn.Conv2d(3, 32, kernel_size=3, padding=1),
             nn.BatchNorm2d(32),
             nn.ReLU(),
             nn.MaxPool2d(kernel_size=2, stride=2),
-            nn.Dropout2d(0.1),
+        ])
+        if has_dropout:
+            layers.append(nn.Dropout2d(0.1))
             
+        # Conv 2
+        layers.extend([
             nn.Conv2d(32, 64, kernel_size=3, padding=1),
             nn.BatchNorm2d(64),
             nn.ReLU(),
             nn.MaxPool2d(kernel_size=2, stride=2),
-            nn.Dropout2d(0.1),
+        ])
+        if has_dropout:
+            layers.append(nn.Dropout2d(0.1))
             
+        # Conv 3
+        layers.extend([
             nn.Conv2d(64, 128, kernel_size=3, padding=1),
             nn.BatchNorm2d(128),
             nn.ReLU(),
             nn.MaxPool2d(kernel_size=2, stride=2),
-            nn.Dropout2d(0.2),
+        ])
+        if has_dropout:
+            layers.append(nn.Dropout2d(0.2))
             
+        # Conv 4
+        layers.extend([
             nn.Conv2d(128, 256, kernel_size=3, padding=1),
             nn.BatchNorm2d(256),
             nn.ReLU(),
             nn.MaxPool2d(kernel_size=2, stride=2),
-            nn.Dropout2d(0.2),
+        ])
+        if has_dropout:
+            layers.append(nn.Dropout2d(0.2))
             
+        # Conv 5
+        layers.extend([
             nn.Conv2d(256, 512, kernel_size=3, padding=1),
             nn.BatchNorm2d(512),
             nn.ReLU(),
             nn.AdaptiveAvgPool2d((1, 1)) # Global Average Pooling
-        )
+        ])
+        
+        self.features = nn.Sequential(*layers)
         
         self.classifier = nn.Sequential(
             nn.Flatten(),

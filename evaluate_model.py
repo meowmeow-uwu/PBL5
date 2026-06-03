@@ -194,14 +194,27 @@ def main():
     print(f"Using Device: {device}")
     
     num_classes = len(CLASS_NAMES)
-    model = CustomCNN(num_classes).to(device)
     
     print(f"Loading weights from {args.model_path}...")
     checkpoint = torch.load(args.model_path, map_location=device, weights_only=False)
-    if 'model_state_dict' in checkpoint:
-        model.load_state_dict(checkpoint['model_state_dict'])
-    else:
-        model.load_state_dict(checkpoint)
+    state_dict = checkpoint['model_state_dict'] if 'model_state_dict' in checkpoint else checkpoint
+    
+    try:
+        model = CustomCNN(num_classes, has_dropout=True).to(device)
+        model.load_state_dict(state_dict)
+        print("  => Loaded CustomCNN (with dropout) successfully.")
+    except RuntimeError as e:
+        print("  => Retrying CustomCNN without dropout...")
+        try:
+            model = CustomCNN(num_classes, has_dropout=False).to(device)
+            model.load_state_dict(state_dict)
+            print("  => Loaded CustomCNN (without dropout) successfully.")
+        except RuntimeError as e2:
+            print("  => Retrying MobileNetV3Edge...")
+            from model import MobileNetV3Edge
+            model = MobileNetV3Edge(num_classes, fine_tune=False).to(device)
+            model.load_state_dict(state_dict)
+            print("  => Loaded MobileNetV3Edge successfully.")
     model.eval()
     print("Model loaded successfully.")
 
