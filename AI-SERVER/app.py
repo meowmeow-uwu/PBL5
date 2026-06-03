@@ -2,6 +2,7 @@ import os
 import io
 import time
 import cv2
+import json
 import torch
 import numpy as np
 import requests
@@ -10,22 +11,21 @@ from flask import Flask, request, jsonify
 from minio import Minio
 from dotenv import load_dotenv
 
+import sys
+# Thêm thư mục gốc PBL5 vào sys.path để dùng chung code
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+from config import RESULTS_DIR, CLASS_NAMES, IMG_SIZE
+from model import preprocess_input, CNN
+from preprocessing import background_cancellation
+import preprocessing
+from statistical_features import extract_statistical_features
+import joblib
+
 # Tải các cấu hình từ tệp .env
 load_dotenv()
 
-# Import cục bộ từ các tệp tiện ích trong thư mục AI-SERVER
-from model_utils import CustomCNN, MobileNetV3Edge, preprocess_input
-from preprocessing_utils import background_cancellation
-
 app = Flask(__name__)
-
-# --- CẤU HÌNH ---
-# Đường dẫn trọng số model (mặc định trỏ ra kết quả train ở thư mục ngoài nếu chạy trong gốc)
-MODEL_PATH = os.getenv("MODEL_PATH", "../results/transfer_save_model/transfer_cnn_best.pth")
-
-# Cấu hình kích thước ảnh đầu vào và danh sách các lớp nhãn nhận diện
-IMG_SIZE = int(os.getenv("IMG_SIZE", "299"))
-CLASS_NAMES = os.getenv("CLASS_NAMES", "Reject,Ripe,Unripe").split(",")
 
 # Cấu hình Web Backend API
 BACKEND_API_URL = os.getenv("BACKEND_API_URL", "http://localhost:8080/api/fruit")
@@ -56,35 +56,39 @@ except Exception as e:
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 print(f"[INFO] Using device: {device}")
 
-# Tải mô hình PyTorch (Tự động nhận diện cấu trúc CustomCNN/MobileNetV3Edge)
-num_classes = len(CLASS_NAMES)
-model = None
+# Tải mô hình tốt nhất từ best_model_info.json
+info_path = os.path.join(RESULTS_DIR, "best_model_info.json")
+if not os.path.exists(info_path):
+    print(f"[ERROR] Could not find {info_path}. Please run train_cachua_module.py first.")
+    exit(1)
 
-if os.path.exists(MODEL_PATH):
-    print(f"[INFO] Loading model weights from: {MODEL_PATH}")
-    checkpoint = torch.load(MODEL_PATH, map_location=device, weights_only=False)
-    state_dict = checkpoint['model_state_dict'] if 'model_state_dict' in checkpoint else checkpoint
-    
-    try:
-        model = CustomCNN(num_classes, has_dropout=True).to(device)
-        model.load_state_dict(state_dict)
-        print("[INFO] Loaded CustomCNN (with dropout) successfully.")
-    except RuntimeError as e:
-        print("[INFO] Retrying CustomCNN without dropout...")
-        try:
-            model = CustomCNN(num_classes, has_dropout=False).to(device)
-            model.load_state_dict(state_dict)
-            print("[INFO] Loaded CustomCNN (without dropout) successfully.")
-        except RuntimeError as e2:
-            print("[INFO] Retrying MobileNetV3Edge...")
-            model = MobileNetV3Edge(num_classes, fine_tune=False).to(device)
-            model.load_state_dict(state_dict)
-            print("[INFO] Loaded MobileNetV3Edge successfully.")
-            
-    model.eval()
-    print("[INFO] Model loaded and set to evaluation mode successfully.")
+with open(info_path, 'r') as f:
+    best_info = json.load(f)
+
+MODEL_PATH = best_info['model_path']
+MODEL_TYPE = best_info['model_type']
+MODEL_COLOR_SPACE = best_info['color_space']
+
+model = None
+ml_pipeline = None
+
+if MODEL_TYPE == "ml":
+    print(f"[INFO] Loading ML model from: {MODEL_PATH}")
+    ml_pipeline = joblib.load(MODEL_PATH)
+    model = ml_pipeline['model']
+    print(f"[INFO] Loaded ML model ({type(model).__name__}) successfully.")
 else:
-    print(f"[ERROR] Model path not found: {MODEL_PATH}")
+    print(f"[INFO] Loading CNN model from: {MODEL_PATH}")
+    num_classes = len(CLASS_NAMES)
+    model = CNN(num_classes).to(device)
+    checkpoint = torch.load(MODEL_PATH, map_location=device, weights_only=False)
+    if 'model_state_dict' in checkpoint:
+        model.load_state_dict(checkpoint['model_state_dict'])
+    else:
+        model.load_state_dict(checkpoint)
+    model.eval()
+    print("[INFO] Loaded CNN model successfully.")
+
 
 # --- XỬ LÝ NỀN (BACKGROUND THREAD) ---
 def process_background_tasks(image_bytes, request_id, result_label, confidence):
@@ -146,19 +150,36 @@ def predict():
         roi = cv2.resize(roi, (IMG_SIZE, IMG_SIZE))
         roi_rgb = cv2.cvtColor(roi, cv2.COLOR_BGR2RGB)
         
-        # Đóng gói dữ liệu đưa vào PyTorch Tensor
-        batch_img = np.expand_dims(roi_rgb, axis=0) 
-        batch_img_p = preprocess_input(batch_img)
-        tensor_img = torch.tensor(batch_img_p).to(device)
-
         # 3. Dự đoán nhãn
-        with torch.no_grad():
-            outputs = model(tensor_img)
-            probs = torch.nn.functional.softmax(outputs, dim=1).cpu().numpy()[0]
+        if MODEL_TYPE == "ml":
+            roi_cs = preprocessing.convert_color_spaces(roi_rgb)[MODEL_COLOR_SPACE]
+            features = extract_statistical_features(roi_cs)
+            features_sc = ml_pipeline['scaler'].transform([features])
             
-        predicted_idx = np.argmax(probs)
-        predicted_class = CLASS_NAMES[predicted_idx]
-        confidence = float(probs[predicted_idx])
+            if hasattr(model, "predict_proba"):
+                probs = model.predict_proba(features_sc)[0]
+                confidence = float(np.max(probs))
+            else:
+                confidence = 1.0 # Support Vector Machines without probability can't give proper confidence
+                
+            pred_idx = model.predict(features_sc)[0]
+            predicted_class = ml_pipeline['le'].inverse_transform([pred_idx])[0]
+            
+        else: # CNN
+            if MODEL_COLOR_SPACE != 'RGB':
+                roi_rgb = preprocessing.convert_color_spaces(roi_rgb)[MODEL_COLOR_SPACE]
+                
+            batch_img = np.expand_dims(roi_rgb, axis=0) 
+            batch_img_p = preprocess_input(batch_img)
+            tensor_img = torch.tensor(batch_img_p).to(device)
+
+            with torch.no_grad():
+                outputs = model(tensor_img)
+                probs = torch.nn.functional.softmax(outputs, dim=1).cpu().numpy()[0]
+                
+            predicted_idx = np.argmax(probs)
+            predicted_class = CLASS_NAMES[predicted_idx]
+            confidence = float(probs[predicted_idx])
         
         # Chuyển đổi nhãn thành IN HOA để khớp giao thức của Arduino/ESP32
         result_label = predicted_class.upper()

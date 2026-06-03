@@ -9,11 +9,8 @@ import cv2
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
-from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import LabelEncoder
 from concurrent.futures import ProcessPoolExecutor
-from concurrent.futures import ProcessPoolExecutor
-from config import RANDOM_STATE, TEST_SIZE, VAL_SIZE_FROM_TRAINVAL, DATASET_DIR, RESULTS_DIR, IMG_SIZE
+from config import DATASET_DIR, RESULTS_DIR, IMG_SIZE
 
 
 def background_cancellation(image, img_size=299):
@@ -110,6 +107,16 @@ def background_cancellation(image, img_size=299):
     
     return cv2.resize(squared_img, (img_size, img_size))
 
+def convert_color_spaces(roi_rgb):
+    """ Nhận ảnh RGB đã cắt nền, trả về 4 định dạng """
+    roi_bgr = cv2.cvtColor(roi_rgb, cv2.COLOR_RGB2BGR)
+    return {
+        'RGB': roi_rgb,
+        'HSV': cv2.cvtColor(roi_bgr, cv2.COLOR_BGR2HSV),
+        'LAB': cv2.cvtColor(roi_bgr, cv2.COLOR_BGR2LAB),
+        'YCrCb': cv2.cvtColor(roi_bgr, cv2.COLOR_BGR2YCrCb)
+    }
+
 def _process_single_image(args):
     """Helper for parallel processing."""
     path, fname, cls, img_size = args
@@ -153,7 +160,6 @@ def load_and_preprocess_images(dataset_dir=DATASET_DIR, img_size=IMG_SIZE,
             print(f"  [WARNING] Not found: {path}")
             continue
         
-        
         files = [f for f in os.listdir(path)
                  if f.lower().endswith(('.jpg', '.jpeg', '.png', '.bmp'))]
         print(f"  {cls}: {len(files)} images ...")
@@ -166,15 +172,13 @@ def load_and_preprocess_images(dataset_dir=DATASET_DIR, img_size=IMG_SIZE,
     samples = {}
     
     with ProcessPoolExecutor() as executor:
-        results = list(executor.map(_process_single_image, tasks))
-        
-    for roi_rgb, cls, orig_resnet, fname in results:
-        if roi_rgb is not None:
-            images.append(roi_rgb)
-            labels.append(cls)
-            fnames.append(fname)
-            if cls not in samples:
-                samples[cls] = {'original': orig_resnet, 'preprocessed': roi_rgb}
+        for roi_rgb, cls, orig_resnet, fname in executor.map(_process_single_image, tasks):
+            if roi_rgb is not None:
+                images.append(roi_rgb)
+                labels.append(cls)
+                fnames.append(fname)
+                if cls not in samples:
+                    samples[cls] = {'original': orig_resnet, 'preprocessed': roi_rgb}
 
     print("[OK]")
 
@@ -205,67 +209,3 @@ def _save_preprocessing_samples(samples):
     plt.savefig(out, dpi=150)
     plt.close()
     print(f"  Sample visualization saved to {out}")
-
-import re
-
-def split_dataset(images, labels, fnames):
-    """Stratified Group-based three-way split to prevent data leakage."""
-    print("\n" + "=" * 60)
-    print("STEP 2: Splitting Dataset (Group-Aware & Stratified)")
-    print("=" * 60)
-
-    le = LabelEncoder()
-    y = le.fit_transform(labels)
-    
-    # Extract Group IDs from filenames to avoid data leakage
-    groups = []
-    for fname in fnames:
-        match = re.match(r"^(\d+)", fname)
-        if match:
-            groups.append(match.group(1))
-        else:
-            groups.append(fname)
-            
-    groups = np.array(groups)
-    
-    # Get unique groups and their corresponding label
-    unique_groups = np.unique(groups)
-    group_labels = []
-    for g in unique_groups:
-        idx = np.where(groups == g)[0][0]
-        group_labels.append(y[idx])
-        
-    unique_groups = np.array(unique_groups)
-    group_labels = np.array(group_labels)
-    
-    # Stratified split on the unique groups
-    g_tv, g_te, gy_tv, gy_te = train_test_split(
-        unique_groups, group_labels, test_size=TEST_SIZE, 
-        stratify=group_labels, random_state=RANDOM_STATE
-    )
-    
-    g_tr, g_v, gy_tr, gy_v = train_test_split(
-        g_tv, gy_tv, test_size=VAL_SIZE_FROM_TRAINVAL, 
-        stratify=gy_tv, random_state=RANDOM_STATE
-    )
-    
-    # Map groups back to images
-    train_mask = np.isin(groups, g_tr)
-    val_mask = np.isin(groups, g_v)
-    test_mask = np.isin(groups, g_te)
-    
-    X_tr, y_tr = images[train_mask], y[train_mask]
-    X_v, y_v = images[val_mask], y[val_mask]
-    X_te, y_te = images[test_mask], y[test_mask]
-
-    n = len(images)
-    print(f"  Train: {len(X_tr)} ({len(X_tr)/n*100:.1f}%)")
-    print(f"  Val:   {len(X_v)}  ({len(X_v)/n*100:.1f}%)")
-    print(f"  Test:  {len(X_te)} ({len(X_te)/n*100:.1f}%)")
-
-    for tag, ys in [("Train", y_tr), ("Val", y_v), ("Test", y_te)]:
-        counts = np.bincount(ys)
-        dist = ", ".join(f"{le.classes_[i]}: {counts[i]}" for i in range(len(counts)))
-        print(f"    {tag}: {dist}")
-
-    return X_tr, X_v, X_te, y_tr, y_v, y_te, le

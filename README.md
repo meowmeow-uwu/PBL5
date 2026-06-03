@@ -1,6 +1,10 @@
-# Tomato Quality Classification (PyTorch)
+# Tomato Quality Classification (PyTorch & Scikit-Learn)
 
-Hệ thống nhận diện và phân loại mức độ trưởng thành, chất lượng của cà chua bằng công nghệ **Deep Learning** chạy trên hệ thống nhúng/Edge AI (MobileNetV3Edge) hoặc Custom CNN tùy chỉnh phát triển từ đầu bằng PyTorch. Hệ thống tích hợp thuật toán xử lý ảnh số tiên tiến giúp tối ưu hóa khả năng loại bỏ nhiễu phông nền của băng chuyền và một máy chủ AI Server độc lập phục vụ cho việc tích hợp thực tế.
+Hệ thống nhận diện và phân loại mức độ trưởng thành, chất lượng của cà chua chạy trên hệ thống nhúng/Edge AI hoặc máy tính cá nhân. Hệ thống đánh giá đồng thời hai phương pháp:
+- **Học máy truyền thống (Machine Learning)**: Sử dụng các mô hình như SVM, Random Forest, K-NN, Gaussian Naive Bayes kết hợp với trích xuất đặc trưng thống kê 12D.
+- **Học sâu (Deep Learning)**: Mạng CNN tự định nghĩa xây dựng bằng PyTorch.
+
+Hệ thống tích hợp thuật toán phân tích màu đa không gian (RGB, HSV, CIE Lab, YCbCr), thuật toán tách nền Center Bias ưu việt và một máy chủ AI Server độc lập phục vụ cho việc tích hợp thực tế với băng chuyền thông qua ESP32-CAM.
 
 Dự án sử dụng trình quản lý gói cực nhanh **uv** để cấu hình và chạy mọi luồng công việc.
 
@@ -10,18 +14,19 @@ Dự án sử dụng trình quản lý gói cực nhanh **uv** để cấu hình
 
 ```text
 .
-├── train_module.py      # Huấn luyện mô hình từ scratch trên Dataset ban đầu
-├── transfer_module.py   # Huấn luyện Transfer Learning (Fine-tune) trên Dataset mới (Cà chua)
-├── evaluate_model.py    # Đánh giá độ chính xác của mô hình tốt nhất trên tập dữ liệu Test mới
-├── predict_module.py    # Phân đoán và suy luận nhãn chất lượng trực tiếp từ một hình ảnh đơn lẻ
-├── model.py             # Định nghĩa cấu trúc CustomCNN, MobileNetV3Edge và Training Loop
-├── preprocessing.py     # Cắt nền ảnh (Background Cancellation) nâng cao dùng OpenCV Center Bias
-├── augmentation.py      # Tăng cường dữ liệu cân bằng động và lưu giữ bộ nhớ
-├── evaluation.py        # Hàm tính toán chỉ số đánh giá (Acc, F1, Precision, Specificity,...)
-├── visualization.py     # Biểu đồ trực quan kết quả (Confusion Matrix, biểu đồ so sánh)
-├── config.py            # Cấu hình tham số hyper-parameters mặc định
-├── .env.example         # Tệp cấu hình biến môi trường mẫu
-└── AI-SERVER/           # Thư mục máy chủ AI Flask API phục vụ suy luận thực tế (ESP32-CAM)
+├── train_cachua_module.py # Orchestrator chính: Huấn luyện đồng loạt ML & CNN trên 4 không gian màu
+├── train_ml.py            # Huấn luyện mô hình Học máy truyền thống (SVM, RF, KNN, GNB) bằng GridSearchCV
+├── train_cnn.py           # Huấn luyện mô hình Học sâu (CNN) tự định nghĩa
+├── predict_module.py      # Phân đoán và suy luận nhãn trực tiếp từ một hình ảnh đơn lẻ (Tự động tải mô hình tốt nhất)
+├── model.py               # Định nghĩa cấu trúc CNN và hàm tiền xử lý Tensor
+├── preprocessing.py       # Cắt nền ảnh (Background Cancellation) nâng cao dùng OpenCV Center Bias
+├── statistical_features.py# Rút trích 12 đặc trưng thống kê màu sắc cho học máy
+├── reporting.py           # Sinh báo cáo phân loại, Confusion Matrix, AUC-ROC, bảng đánh giá
+├── evaluation.py          # Hàm tính toán chỉ số đánh giá (Acc, F1, Precision, Specificity,...)
+├── visualization.py       # Biểu đồ trực quan kết quả 
+├── config.py              # Cấu hình tham số hyper-parameters mặc định
+├── .env.example           # Tệp cấu hình biến môi trường mẫu
+└── AI-SERVER/             # Thư mục máy chủ AI Flask API phục vụ suy luận thực tế (ESP32-CAM)
 ```
 
 ---
@@ -32,26 +37,22 @@ Dự án sử dụng trình quản lý gói cực nhanh **uv** để cấu hình
    * Chuyển đổi sang hệ màu HSV để lọc dải màu Đỏ/Xanh lá và loại bỏ các nhiễu từ kim loại, ánh sáng phản xạ.
    * Sử dụng phép toán hình thái học (Morphological Operations) để lấp các vùng trống bên trong quả.
    * Áp dụng **Center Bias** để đo khoảng cách từ trọng tâm (Centroid) của các vật thể màu tới trung tâm bức ảnh, lọc bỏ hoàn toàn nhiễu từ biên ngoài băng chuyền và chỉ giữ lại quả cà chua ở tâm.
-   * Tự động cắt cúp (Crop) và đệm viền đen (Padding) để chuyển ảnh về dạng vuông giúp giữ nguyên tỷ lệ cấu trúc quả.
 
-2. **Mạng Deep Learning Linh hoạt (MobileNetV3Edge & CustomCNN)**:
-   * **MobileNetV3Edge**: Nhẹ, nhanh, tối ưu hóa cho Edge AI/thiết bị nhúng dựa trên MobileNetV3-Small.
-   * **CustomCNN**: Mạng 5 khối tích chập tự định nghĩa cho độ chính xác cao.
-   * Hỗ trợ tự động tính toán Class Weights để xử lý mất cân bằng dữ liệu (Class Imbalance).
+2. **So sánh Đa Không Gian Màu (Multi-Color Space Analysis)**:
+   * Tự động huấn luyện, đánh giá và tìm ra mô hình hoạt động tốt nhất độc lập trên 4 không gian màu khác nhau: **RGB**, **HSV**, **CIE Lab**, và **YCbCr**.
+   * Tính toán và xuất biểu đồ `Đóng góp Kênh Màu (Channel Contribution)` qua phương pháp Permutation Importance.
 
-3. **Resume Training tự động**:
-   * Lưu trữ trạng thái Optimizer, Epoch và Learning Rate Scheduler sau mỗi epoch dưới tệp `_last.pth`.
-   * Tự động khôi phục quá trình huấn luyện tiếp tục từ epoch bị ngắt nếu có sự cố xảy ra.
+3. **Mạng Deep Learning & Machine Learning Tự Động Hóa**:
+   * **Machine Learning**: Tìm kiếm siêu tham số tối ưu (Hyperparameter Tuning) tự động sử dụng `GridSearchCV` trên 12D đặc trưng.
+   * **CNN**: Huấn luyện đầu cuối, tự động tính toán trọng số cân bằng lớp (Class Weights), tính toán ROC-AUC và Channel Importance.
 
-4. **Trình Đánh giá Mô hình Độc lập (`evaluate_model.py`)**:
-   * Kiểm tra trực tiếp độ chính xác của các checkpoint trên một tập dữ liệu Test mới.
-   * Tự động phát hiện kiến trúc mô hình (CustomCNN có/không có Dropout hoặc MobileNetV3Edge) của checkpoint để load trọng số tương thích.
-   * Tính toán đầy đủ: Accuracy, Precision, Recall, F1-Score, và Specificity cho từng lớp (`Reject`, `Ripe`, `Unripe`).
-   * Xuất báo cáo text chi tiết và vẽ Confusion Matrix trực quan.
+4. **Zero-Config Prediction (Suy luận thông minh)**:
+   * Module dự đoán (`predict_module.py` và `AI-SERVER`) tự động phân tích tệp cấu hình `best_model_info.json` sau khi train để tải lên "Mô Hình Tốt Nhất" (dù là CNN hay ML), áp dụng đúng không gian màu chuẩn, tính năng chuẩn bị ảnh trước mà không cần cấu hình tay.
 
 5. **AI Server phục vụ Băng Chuyền Bất Đồng Bộ**:
    * Flask Server độc lập hỗ trợ nhận ảnh từ board ESP32-CAM qua form-data `/predict`.
-   * Xử lý luồng chạy ngầm bất đồng bộ (Background Thread) để upload ảnh lên MinIO và gọi Web Backend API, giúp trả kết quả về ESP32 tức thì trong thời gian dưới 0.1 giây.
+   * Hỗ trợ tải tự động mô hình vô địch cuối cùng (Absolute Best Model) để dự đoán.
+   * Xử lý luồng chạy ngầm bất đồng bộ (Background Thread) để upload ảnh lên MinIO và gọi Web Backend API, trả kết quả về ESP32 tức thì.
 
 ---
 
@@ -69,47 +70,25 @@ Tạo cấu hình biến môi trường cục bộ:
 ```bash
 copy .env.example .env
 ```
-Mở tệp `.env` và tùy chỉnh đường dẫn thư mục dataset của bạn.
+Mở tệp `.env` và tùy chỉnh đường dẫn thư mục dataset của bạn (`DATASET_CACHUA_DIR`).
 
 ---
 
-### 1. Huấn luyện Mô hình cơ bản (Base Training)
-Dùng để huấn luyện mô hình từ đầu (Mặc định sử dụng `MobileNetV3Edge` trên nhánh này để đạt hiệu năng Edge AI tối ưu):
+### 1. Huấn luyện Mô hình Đánh Giá Toàn Diện (Orchestrator Pipeline)
+Chạy kịch bản tự động tải dữ liệu, trích xuất đặc trưng, huấn luyện 4 mô hình ML và 1 mô hình CNN qua tất cả không gian màu, sau đó tổng hợp báo cáo ROC-AUC:
 ```bash
-uv run train_module.py
+uv run train_cachua_module.py
 ```
-* Trọng số tốt nhất được lưu tại: `results/train_save_model/mobilenet_best.pth`
-* Biểu đồ lịch sử huấn luyện: `results/train_save_model/mobilenet_history.png`
+* Báo cáo text chi tiết và biểu đồ lưu tại: `results/results_<color_space>/`
+* Các bảng so sánh toàn diện lưu tại: `results/table_evaluation_results.txt` và `results/table_dominant_channel.txt`
+* Thông tin Mô hình Tốt nhất (Vô địch) được lưu tự động tại: `results/best_model_info.json`
 
 ---
 
-### 2. Fine-tune Mô hình (Transfer Learning)
-Thực hiện chuyển giao học máy trên tập dữ liệu cà chua mới (`DATASET_CACHUA_DIR`):
+### 2. Phân đoán Trực tiếp (Inference)
+Chạy dự đoán nhãn chất lượng của 1 hình ảnh đơn lẻ (Tự động tải mô hình Vô Địch từ bước 1):
 ```bash
-uv run transfer_module.py
-```
-* Hệ thống sẽ tự động tìm kiếm `results/train_save_model/mobilenet_best.pth` làm mô hình gốc để tinh chỉnh.
-* Mô hình tốt nhất được lưu tại: `results/transfer_save_model/mobilenet_finetuned_best.pth`
-
----
-
-### 3. Đánh giá Mô hình trên Tập dữ liệu Test (`evaluate_model.py`)
-Kiểm tra độ chính xác trên tập Test bên ngoài. Bạn có thể định cấu hình đường dẫn qua các biến môi trường trong `.env` (`EVAL_MODEL_PATH`, `EVAL_TEST_DIR`) hoặc truyền trực tiếp qua CLI:
-
-```bash
-uv run evaluate_model.py --test_dir "C:\Path\To\Test_Set" --model_path "results/train_save_model/base_cnn_best.pth"
-```
-
-* **Kết quả đầu ra**:
-  * Báo cáo đánh giá dạng text lưu tại: `results/test_evaluation/test_evaluation_report.txt`
-  * Ma trận nhầm lẫn Confusion Matrix lưu tại: `results/test_evaluation/test_confusion_matrices.png`
-
----
-
-### 4. Phân đoán Trực tiếp (Inference)
-Chạy dự đoán nhãn chất lượng của 1 hình ảnh đơn lẻ:
-```bash
-uv run predict_module.py --image "test_sample.jpg" --model "results/train_save_model/base_cnn_best.pth"
+uv run predict_module.py --image "test_sample.jpg"
 ```
 
 ---
@@ -120,9 +99,9 @@ uv run predict_module.py --image "test_sample.jpg" --model "results/train_save_m
    ```bash
    cd AI-SERVER
    ```
-2. Cấu hình các biến trong `AI-SERVER/.env` (MODEL_PATH, MINIO, BACKEND_API_URL).
+2. Cấu hình các biến trong `AI-SERVER/.env` (Tạo từ mẫu `copy .env.example .env`).
 3. Khởi động server:
    ```bash
    uv run app.py
    ```
-Server sẽ chạy mặc định tại cổng `5000` sẵn sàng nhận dữ liệu tại endpoint `/predict`.
+Server sẽ chạy mặc định tại cổng `5000` sẵn sàng nhận dữ liệu tại endpoint `/predict`. Nó cũng sẽ tự động sử dụng chung pipeline và tải mô hình Vô Địch từ kết quả huấn luyện.
