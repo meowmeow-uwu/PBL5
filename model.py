@@ -79,86 +79,9 @@ class FocalLoss(nn.Module):
         else:
             return focal_loss
 
-# --- Define Model ---
-class MobileNetV3Edge(nn.Module):
-    def __init__(self, num_classes, fine_tune=False):
-        super(MobileNetV3Edge, self).__init__()
-        weights = models.MobileNet_V3_Small_Weights.IMAGENET1K_V1
-        self.backbone = models.mobilenet_v3_small(weights=weights)
-        
-        # Freeze early layers for Transfer Learning, unless fine-tuning
-        if not fine_tune:
-            for param in self.backbone.parameters():
-                param.requires_grad = False
-        else:
-            for param in self.backbone.parameters():
-                param.requires_grad = True
-            
-        # Replace the final classification layer
-        in_features = self.backbone.classifier[-1].in_features
-        self.backbone.classifier[-1] = nn.Linear(in_features, num_classes)
-        
-        # Make sure the new classifier requires gradients
-        for param in self.backbone.classifier.parameters():
-            param.requires_grad = True
-
-    def forward(self, x):
-        return self.backbone(x)
-
-# --- Define CustomCNN (from scratch) ---
-class CustomCNN(nn.Module):
-    def __init__(self, num_classes):
-        super(CustomCNN, self).__init__()
-        self.features = nn.Sequential(
-            nn.Conv2d(3, 32, kernel_size=3, padding=1),
-            nn.BatchNorm2d(32),
-            nn.ReLU(),
-            nn.MaxPool2d(kernel_size=2, stride=2),
-            nn.Dropout2d(0.1),
-            
-            nn.Conv2d(32, 64, kernel_size=3, padding=1),
-            nn.BatchNorm2d(64),
-            nn.ReLU(),
-            nn.MaxPool2d(kernel_size=2, stride=2),
-            nn.Dropout2d(0.1),
-            
-            nn.Conv2d(64, 128, kernel_size=3, padding=1),
-            nn.BatchNorm2d(128),
-            nn.ReLU(),
-            nn.MaxPool2d(kernel_size=2, stride=2),
-            nn.Dropout2d(0.2),
-            
-            nn.Conv2d(128, 256, kernel_size=3, padding=1),
-            nn.BatchNorm2d(256),
-            nn.ReLU(),
-            nn.MaxPool2d(kernel_size=2, stride=2),
-            nn.Dropout2d(0.2),
-            
-            nn.Conv2d(256, 512, kernel_size=3, padding=1),
-            nn.BatchNorm2d(512),
-            nn.ReLU(),
-            nn.AdaptiveAvgPool2d((1, 1)) # Global Average Pooling
-        )
-        
-        self.classifier = nn.Sequential(
-            nn.Flatten(),
-            nn.Dropout(DROPOUT_1),
-            nn.Linear(512, DENSE_UNITS),
-            nn.ReLU(),
-            nn.BatchNorm1d(DENSE_UNITS),
-            nn.Dropout(DROPOUT_2),
-            nn.Linear(DENSE_UNITS, num_classes)
-        )
-        
-    def forward(self, x):
-        x = self.features(x)
-        x = self.classifier(x)
-        return x
-
-class PaperCNN(nn.Module):
+class CNN(nn.Module):
     def __init__(self, num_classes, dropout_rate=0.5):
-        super(PaperCNN, self).__init__()
-        # Kiến trúc 3 khối Convolution chuẩn bài báo
+        super(CNN, self).__init__()
         self.conv = nn.Sequential(
             nn.Conv2d(3, 32, 3, padding=1), nn.ReLU(), nn.MaxPool2d(2, 2),
             nn.Conv2d(32, 64, 3, padding=1), nn.ReLU(), nn.MaxPool2d(2, 2),
@@ -189,6 +112,7 @@ def preprocess_input(X):
         # Batch
         X = X.astype(np.float32) / 255.0
         X = np.transpose(X, (0, 3, 1, 2))
+        X = (X - 0.5) / 0.5
     return X
 
 
@@ -365,5 +289,4 @@ def train_cnn(
     
     print(f"  Finished training workflow. Models are in: {checkpoint_dir}")
     return model, history
-
 

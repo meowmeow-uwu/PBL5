@@ -6,8 +6,11 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "datasets>=4.8.5",
+    "flask>=3.1.3",
+    "minio>=7.2.20",
     "opencv-python>=4.8.0",
     "python-dotenv>=1.0.0",
+    "requests>=2.34.2",
     "scikit-learn>=1.3.0",
     "seaborn>=0.12.2",
     "torch>=2.3.0",
@@ -16,11 +19,11 @@ dependencies = [
 ]
 
 [[tool.uv.index]]
-name = "pytorch"
+name = "pytorch-cu118"
 url = "https://download.pytorch.org/whl/cu118"
 explicit = true
 
 [tool.uv.sources]
-torch = { index = "pytorch" }
-torchvision = { index = "pytorch" }
-torchaudio = { index = "pytorch" }
+torch = { index = "pytorch-cu118" }
+torchvision = { index = "pytorch-cu118" }
+torchaudio = { index = "pytorch-cu118" }

@@ -64,22 +64,16 @@ def predict_cnn(image_path, model_path, model_type):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     num_classes = len(CLASS_NAMES)
     
+    from model import CNN
+    model = CNN(num_classes).to(device)
+    
+    # Infer color space from path (e.g. results_HSV/)
     color_space = 'RGB'
-    if model_type == "custom_cnn":
-        from model import CustomCNN
-        model = CustomCNN(num_classes).to(device)
-    elif model_type == "mobilenet":
-        from model import MobileNetV3Edge
-        model = MobileNetV3Edge(num_classes).to(device)
-    elif model_type == "papercnn":
-        from model import PaperCNN
-        model = PaperCNN(num_classes).to(device)
-        # Infer color space from path
-        import re
-        match = re.search(r'results_([a-zA-Z]+)/', model_path)
-        if match:
-            color_space = match.group(1)
-            print(f"Inferred color space: {color_space}")
+    import re
+    match = re.search(r'results_([a-zA-Z]+)/', model_path)
+    if match:
+        color_space = match.group(1)
+        print(f"Inferred color space: {color_space}")
             
     print(f"Loading weights from {model_path}...")
     checkpoint = torch.load(model_path, map_location=device, weights_only=False)
@@ -99,18 +93,15 @@ def predict_cnn(image_path, model_path, model_type):
     roi = cv2.resize(roi, (IMG_SIZE, IMG_SIZE))
     roi_rgb = cv2.cvtColor(roi, cv2.COLOR_BGR2RGB)
     
-    if model_type == "papercnn" and color_space != 'RGB':
+    if color_space != 'RGB':
         roi_rgb = preprocessing.convert_color_spaces(roi_rgb)[color_space]
         
-    # Expand dims from (H, W, 3) to (1, H, W, 3) for standardized preprocess
     batch_img = np.expand_dims(roi_rgb, axis=0) 
     batch_img_p = preprocess_input(batch_img)
     tensor_img = torch.tensor(batch_img_p).to(device)
 
-    # Predict
     with torch.no_grad():
         outputs = model(tensor_img)
-        # Apply Softmax for probabilities
         probs = torch.nn.functional.softmax(outputs, dim=1).cpu().numpy()[0]
         
     predicted_idx = np.argmax(probs)
@@ -120,7 +111,7 @@ def predict_cnn(image_path, model_path, model_type):
     print("      PREDICTION RESULTS (CNN)")
     print("="*40)
     print(f"Input: {image_path}")
-    print(f"Model Type: {model_type}")
+    print(f"Color Space: {color_space}")
     print(f"Predicted Class: {predicted_class}")
     print("Probabilities:")
     for i, cls in enumerate(CLASS_NAMES):

@@ -59,7 +59,7 @@ weighted avg       0.79      0.78      0.77       199
 
 
 ============================================================
-Classification Report (PaperCNN)
+Classification Report (CNN)
 ============================================================
               precision    recall  f1-score   support
 
