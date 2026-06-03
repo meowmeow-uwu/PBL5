@@ -12,6 +12,7 @@ import matplotlib.pyplot as plt
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
 from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures import ProcessPoolExecutor
 from config import RANDOM_STATE, TEST_SIZE, VAL_SIZE_FROM_TRAINVAL, DATASET_DIR, RESULTS_DIR, IMG_SIZE
 
 
@@ -152,8 +153,10 @@ def load_and_preprocess_images(dataset_dir=DATASET_DIR, img_size=IMG_SIZE,
             print(f"  [WARNING] Not found: {path}")
             continue
         
+        
         files = [f for f in os.listdir(path)
                  if f.lower().endswith(('.jpg', '.jpeg', '.png', '.bmp'))]
+        print(f"  {cls}: {len(files)} images ...")
         print(f"  {cls}: {len(files)} images ...")
         for fname in files:
             tasks.append((path, fname, cls, img_size))
@@ -173,7 +176,9 @@ def load_and_preprocess_images(dataset_dir=DATASET_DIR, img_size=IMG_SIZE,
             fnames.append(fname)
             if cls not in samples:
                 samples[cls] = {'original': orig_resnet, 'preprocessed': roi_rgb}
+                samples[cls] = {'original': orig_resnet, 'preprocessed': roi_rgb}
 
+    print("[OK]")
     print("[OK]")
 
     if save_samples and samples:
