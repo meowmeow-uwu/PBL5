@@ -200,6 +200,18 @@ def preprocess_input(X):
         X = X.astype(np.float32) / 255.0
         X = np.transpose(X, (0, 3, 1, 2))
         X = (X - 0.5) / 0.5
+    Supports both single images (H, W, 3) and batches (N, H, W, 3).
+    """
+    if X.ndim == 3:
+        # Single image
+        X = X.astype(np.float32) / 255.0
+        X = np.transpose(X, (2, 0, 1))
+        X = (X - 0.5) / 0.5
+    else:
+        # Batch
+        X = X.astype(np.float32) / 255.0
+        X = np.transpose(X, (0, 3, 1, 2))
+        X = (X - 0.5) / 0.5
     return X
 
 
@@ -246,6 +258,7 @@ def train_cnn(
     criterion = FocalLoss(weight=class_weights, gamma=2.0)
     optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=1e-4)
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(
+        optimizer, mode='min', factor=0.5, patience=3, min_lr=1e-7
         optimizer, mode='min', factor=0.5, patience=3, min_lr=1e-7
     )
 
