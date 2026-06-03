@@ -20,11 +20,12 @@ from config import (
 
 # --- Dataset ---
 class FruitDataset(torch.utils.data.Dataset):
-    def __init__(self, images, labels=None, transform=None, indices=None):
+    def __init__(self, images, labels=None, transform=None, indices=None, color_space='RGB'):
         self.images = images  # uint8 images (N, H, W, 3)
         self.labels = labels
         self.transform = transform
         self.indices = indices if indices is not None else np.arange(len(images))
+        self.color_space = color_space
 
     def __len__(self):
         return len(self.indices)
@@ -33,6 +34,10 @@ class FruitDataset(torch.utils.data.Dataset):
         real_idx = self.indices[idx]
         img = self.images[real_idx]
         
+        if self.color_space != 'RGB':
+            import preprocessing
+            img = preprocessing.convert_color_spaces(img)[self.color_space]
+            
         # Preprocess on the fly (uint8 -> float32)
         img = img.astype(np.float32) / 255.0
         # Transpose to (C, H, W) for PyTorch
@@ -150,6 +155,25 @@ class CustomCNN(nn.Module):
         x = self.classifier(x)
         return x
 
+class PaperCNN(nn.Module):
+    def __init__(self, num_classes, dropout_rate=0.5):
+        super(PaperCNN, self).__init__()
+        # Kiến trúc 3 khối Convolution chuẩn bài báo
+        self.conv = nn.Sequential(
+            nn.Conv2d(3, 32, 3, padding=1), nn.ReLU(), nn.MaxPool2d(2, 2),
+            nn.Conv2d(32, 64, 3, padding=1), nn.ReLU(), nn.MaxPool2d(2, 2),
+            nn.Conv2d(64, 128, 3, padding=1), nn.ReLU(), nn.MaxPool2d(2, 2)
+        )
+        self.fc = nn.Sequential(
+            nn.Flatten(),
+            nn.Linear(128 * 16 * 16, 128), # Ảnh 128x128 qua 3 lần MaxPool còn 16x16
+            nn.ReLU(),
+            nn.Dropout(dropout_rate),
+            nn.Linear(128, num_classes)
+        )
+    def forward(self, x):
+        return self.fc(self.conv(x))
+
 
 def preprocess_input(X):
     """
@@ -165,19 +189,6 @@ def preprocess_input(X):
         # Batch
         X = X.astype(np.float32) / 255.0
         X = np.transpose(X, (0, 3, 1, 2))
-        X = (X - 0.5) / 0.5
-    Supports both single images (H, W, 3) and batches (N, H, W, 3).
-    """
-    if X.ndim == 3:
-        # Single image
-        X = X.astype(np.float32) / 255.0
-        X = np.transpose(X, (2, 0, 1))
-        X = (X - 0.5) / 0.5
-    else:
-        # Batch
-        X = X.astype(np.float32) / 255.0
-        X = np.transpose(X, (0, 3, 1, 2))
-        X = (X - 0.5) / 0.5
     return X
 
 
@@ -224,7 +235,6 @@ def train_cnn(
     criterion = FocalLoss(weight=class_weights, gamma=2.0)
     optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=1e-4)
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer, mode='min', factor=0.5, patience=3, min_lr=1e-7
         optimizer, mode='min', factor=0.5, patience=3, min_lr=1e-7
     )
 

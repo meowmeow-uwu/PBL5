@@ -11,7 +11,7 @@ DATASET_DIR = os.getenv("DATASET_DIR", "../dataset/Dataset/Three Classes")
 DATASET_CACHUA_DIR = os.getenv("DATASET_CACHUA_DIR", "../dataset/Dataset_Cachua")
 RESULTS_DIR = os.getenv("RESULTS_DIR", "./results")
 
-IMG_SIZE = 299              # Input size
+IMG_SIZE = 128              # Input size
 CLASS_NAMES = ['Reject', 'Ripe', 'Unripe']
 
 RANDOM_STATE = 42
@@ -21,6 +21,8 @@ AUGMENTATION_FACTOR = 3     # Number of augmented copies per training image
 
 TEST_SIZE = 0.2
 VAL_SIZE_FROM_TRAINVAL = 0.125  # 10% of total = 12.5% of the 80% trainval
+
+COLOR_SPACES = ['RGB', 'HSV', 'LAB', 'YCrCb']
 
 LEARNING_RATE = 1e-4
 DROPOUT_1 = 0.5

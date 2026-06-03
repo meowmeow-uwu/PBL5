@@ -1,0 +1,74 @@
+============================================================
+Classification Report (SVM)
+Optimal Parameters: {'C': 100, 'gamma': 'auto', 'kernel': 'poly'}
+============================================================
+              precision    recall  f1-score   support
+
+      Reject       1.00      0.84      0.91        55
+        Ripe       0.89      1.00      0.94        81
+      Unripe       1.00      0.98      0.99        63
+
+    accuracy                           0.95       199
+   macro avg       0.96      0.94      0.95       199
+weighted avg       0.96      0.95      0.95       199
+
+
+============================================================
+Classification Report (Random Forest)
+Optimal Parameters: {'max_depth': None, 'min_samples_leaf': 1, 'min_samples_split': 2, 'n_estimators': 100}
+============================================================
+              precision    recall  f1-score   support
+
+      Reject       0.98      0.78      0.87        55
+        Ripe       0.89      1.00      0.94        81
+      Unripe       0.97      0.98      0.98        63
+
+    accuracy                           0.93       199
+   macro avg       0.95      0.92      0.93       199
+weighted avg       0.94      0.93      0.93       199
+
+
+============================================================
+Classification Report (K-NN)
+Optimal Parameters: {'metric': 'manhattan', 'n_neighbors': 3, 'weights': 'distance'}
+============================================================
+              precision    recall  f1-score   support
+
+      Reject       0.96      0.80      0.87        55
+        Ripe       0.89      1.00      0.94        81
+      Unripe       0.98      0.97      0.98        63
+
+    accuracy                           0.93       199
+   macro avg       0.94      0.92      0.93       199
+weighted avg       0.94      0.93      0.93       199
+
+
+============================================================
+Classification Report (Gaussian NB)
+Optimal Parameters: {'var_smoothing': 1e-10}
+============================================================
+              precision    recall  f1-score   support
+
+      Reject       0.68      0.42      0.52        55
+        Ripe       0.75      0.86      0.80        81
+      Unripe       0.71      0.81      0.76        63
+
+    accuracy                           0.72       199
+   macro avg       0.71      0.70      0.69       199
+weighted avg       0.72      0.72      0.71       199
+
+
+============================================================
+Classification Report (PaperCNN)
+============================================================
+              precision    recall  f1-score   support
+
+      Reject       0.91      0.93      0.92        55
+        Ripe       0.95      0.95      0.95        81
+      Unripe       1.00      0.98      0.99        63
+
+    accuracy                           0.95       199
+   macro avg       0.95      0.95      0.95       199
+weighted avg       0.96      0.95      0.95       199
+
+

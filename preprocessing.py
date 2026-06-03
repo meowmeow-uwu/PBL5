@@ -110,6 +110,16 @@ def background_cancellation(image, img_size=299):
     
     return cv2.resize(squared_img, (img_size, img_size))
 
+def convert_color_spaces(roi_rgb):
+    """ Nhận ảnh RGB đã cắt nền, trả về 4 định dạng """
+    roi_bgr = cv2.cvtColor(roi_rgb, cv2.COLOR_RGB2BGR)
+    return {
+        'RGB': roi_rgb,
+        'HSV': cv2.cvtColor(roi_bgr, cv2.COLOR_BGR2HSV),
+        'LAB': cv2.cvtColor(roi_bgr, cv2.COLOR_BGR2LAB),
+        'YCrCb': cv2.cvtColor(roi_bgr, cv2.COLOR_BGR2YCrCb)
+    }
+
 def _process_single_image(args):
     """Helper for parallel processing."""
     path, fname, cls, img_size = args
@@ -167,16 +177,13 @@ def load_and_preprocess_images(dataset_dir=DATASET_DIR, img_size=IMG_SIZE,
     samples = {}
     
     with ProcessPoolExecutor() as executor:
-        results = list(executor.map(_process_single_image, tasks))
-        
-    for roi_rgb, cls, orig_resnet, fname in results:
-        if roi_rgb is not None:
-            images.append(roi_rgb)
-            labels.append(cls)
-            fnames.append(fname)
-            if cls not in samples:
-                samples[cls] = {'original': orig_resnet, 'preprocessed': roi_rgb}
-                samples[cls] = {'original': orig_resnet, 'preprocessed': roi_rgb}
+        for roi_rgb, cls, orig_resnet, fname in executor.map(_process_single_image, tasks):
+            if roi_rgb is not None:
+                images.append(roi_rgb)
+                labels.append(cls)
+                fnames.append(fname)
+                if cls not in samples:
+                    samples[cls] = {'original': orig_resnet, 'preprocessed': roi_rgb}
 
     print("[OK]")
     print("[OK]")
