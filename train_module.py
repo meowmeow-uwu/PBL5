@@ -13,9 +13,10 @@ from config import (
     DATASET_DIR, RESULTS_DIR, BATCH_SIZE, RANDOM_STATE, FINE_TUNE_EPOCHS
 )
 from preprocessing import load_and_preprocess_images, split_dataset
-from augmentation import create_augmented_data
-from classifiers import train_and_evaluate
-from model import CustomCNN, preprocess_input, train_cnn, extract_features_loop, FruitDataset
+import augmentation
+from model import CustomCNN, MobileNetV3Edge, preprocess_input, train_cnn, FruitDataset
+from evaluation import compute_metrics
+from sklearn.metrics import classification_report
 from visualization import plot_confusion_matrices, plot_comparison_chart, print_summary_table
 
 warnings.filterwarnings('ignore')
@@ -28,18 +29,19 @@ def main():
     print("=" * 60 + "\n")
 
     # 1. Load Data
-    images, labels = load_and_preprocess_images(dataset_dir=DATASET_DIR)
+    images, labels, fnames = load_and_preprocess_images(dataset_dir=DATASET_DIR)
     
     # 2. Split
-    X_tr, X_v, X_te, y_tr, y_v, y_te, le = split_dataset(images, labels)
+    X_tr, X_v, X_te, y_tr, y_v, y_te, le = split_dataset(images, labels, fnames)
     num_classes = len(le.classes_)
     
-    # 3. Augment
-    X_tr_aug, y_tr_aug = create_augmented_data(X_tr, y_tr)
+    # 3. Augment & Balance (Dynamic and memory efficient)
+    train_indices = augmentation.get_balanced_indices(y_tr)
+    train_transform = augmentation.get_dynamic_transform()
     
     # 4. DataLoaders (using FruitDataset for memory efficiency)
     train_loader = DataLoader(
-        FruitDataset(X_tr_aug, y_tr_aug.astype(np.int64)),
+        FruitDataset(X_tr, y_tr.astype(np.int64), transform=train_transform, indices=train_indices),
         batch_size=BATCH_SIZE, shuffle=True,
         num_workers=4, pin_memory=True
     )
@@ -47,19 +49,23 @@ def main():
         FruitDataset(X_v, y_v.astype(np.int64)),
         batch_size=BATCH_SIZE, shuffle=False,
         num_workers=4, pin_memory=True
+        FruitDataset(X_v, y_v.astype(np.int64)),
+        batch_size=BATCH_SIZE, shuffle=False,
+        num_workers=4, pin_memory=True
     )
     
+    train_orig_loader = DataLoader(FruitDataset(X_tr), batch_size=BATCH_SIZE, shuffle=False, num_workers=4, pin_memory=True)
+    test_loader = DataLoader(FruitDataset(X_te), batch_size=BATCH_SIZE, shuffle=False, num_workers=4, pin_memory=True)
     train_orig_loader = DataLoader(FruitDataset(X_tr), batch_size=BATCH_SIZE, shuffle=False, num_workers=4, pin_memory=True)
     test_loader = DataLoader(FruitDataset(X_te), batch_size=BATCH_SIZE, shuffle=False, num_workers=4, pin_memory=True)
     
     # 4. Train Custom CNN
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f"Device: {device}")
-    model = CustomCNN(num_classes).to(device)
+    model = MobileNetV3Edge(num_classes, fine_tune=False).to(device)
     
     # Calculate class weights for the original dataset
-    targets = y_tr_aug.astype(np.int64)
-    class_sample_count = np.bincount(targets)
+    class_sample_count = np.bincount(y_tr.astype(np.int64))
     weights = 1. / class_sample_count
     weights = weights / weights.sum() * num_classes
     class_weights = torch.tensor(weights, dtype=torch.float)
@@ -69,19 +75,43 @@ def main():
     model, history = train_cnn(
         model, train_loader, val_loader,
         epochs=FINE_TUNE_EPOCHS, device=device,
-        checkpoint_dir=save_dir, prefix="base_cnn",
+        checkpoint_dir=save_dir, prefix="mobilenet",
         class_weights=class_weights
     )
     
-    # 5. Extract Features
-    print("\n" + "=" * 60)
-    print("STEP 5: Feature Extraction (GAP)")
-    print("=" * 60)
-    train_feat = extract_features_loop(model, train_orig_loader, device)
-    test_feat = extract_features_loop(model, test_loader, device)
+    # Evaluate MobileNetV3 directly
+    model.eval()
+    cnn_preds = []
+    with torch.no_grad():
+        for inputs in test_loader:
+            if isinstance(inputs, list) or isinstance(inputs, tuple):
+                inputs = inputs[0]
+            outputs = model(inputs.to(device))
+            _, preds = torch.max(outputs, 1)
+            cnn_preds.extend(preds.cpu().numpy())
+    cnn_preds = np.array(cnn_preds)
     
-    # 6. Classifiers
-    results = train_and_evaluate(train_feat, test_feat, y_tr, y_te, le)
+    cnn_metrics = compute_metrics(y_te, cnn_preds, num_classes)
+    cnn_metrics['y_pred'] = cnn_preds
+    
+    print("\n" + "=" * 60)
+    print("Evaluating MobileNetV3 (Edge AI)")
+    print("=" * 60)
+    print(f"  Accuracy:    {cnn_metrics['accuracy']*100:.2f}%")
+    print(f"  Precision:   {cnn_metrics['precision']*100:.2f}%")
+    print(f"  Recall:      {cnn_metrics['recall']*100:.2f}%")
+    print(f"  F1-Score:    {cnn_metrics['f1_score']*100:.2f}%")
+    
+    report_str = classification_report(y_te, cnn_preds, target_names=le.classes_)
+    report_path = os.path.join(RESULTS_DIR, "classification_report.txt")
+    
+    with open(report_path, "w") as f:
+        f.write(f"{'='*60}\n")
+        f.write(f"Classification Report (MobileNetV3)\n")
+        f.write(f"{'='*60}\n")
+        f.write(report_str + "\n")
+        
+    results = {'MobileNetV3': cnn_metrics}
     
     # 7. Visualize
     print("\n" + "=" * 60)

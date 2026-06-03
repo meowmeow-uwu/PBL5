@@ -12,56 +12,110 @@ import matplotlib.pyplot as plt
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
 from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures import ProcessPoolExecutor
 from config import RANDOM_STATE, TEST_SIZE, VAL_SIZE_FROM_TRAINVAL, DATASET_DIR, RESULTS_DIR, IMG_SIZE
 
 
-def background_cancellation(image):
-    """
-    Remove background using Otsu thresholding on Red and Green channels,
-    combined with morphological operations.
-
-    Steps:
-      1. Extract Red and Green channels
-      2. Otsu threshold each channel -> binary mask
-      3. Combine masks (OR)
-      4. Morphological closing + flood-fill to fill holes
-      5. Morphological opening to remove small noise
-      6. Multiply mask with original image -> ROI
-    """
-    _, green, red = cv2.split(image)  # OpenCV = BGR
-
-    # Otsu thresholding
-    _, mask_red = cv2.threshold(red, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-    _, mask_green = cv2.threshold(green, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-
-    # Combine with OR
-    combined = cv2.bitwise_or(mask_red, mask_green)
-
-    # Morphological closing (fill small holes)
-    kernel_large = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (15, 15))
-    combined = cv2.morphologyEx(combined, cv2.MORPH_CLOSE, kernel_large, iterations=3)
-
-    # Flood-fill remaining holes
-    flood = combined.copy()
-    h, w = flood.shape[:2]
-    flood_mask = np.zeros((h + 2, w + 2), np.uint8)
-    cv2.floodFill(flood, flood_mask, (0, 0), 255)
-    combined = cv2.bitwise_or(combined, cv2.bitwise_not(flood))
-
-    # Morphological opening (remove small noise)
+def background_cancellation(image, img_size=299):
+    hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+    
+    # 1. TẠO MẶT NẠ MÀU VÀ LẤP LỖ HỔNG (Giữ nguyên như bản trước)
+    lower_red = np.array([0, 30, 50])
+    upper_red = np.array([30, 255, 255])
+    lower_red_wrap = np.array([160, 30, 50])
+    upper_red_wrap = np.array([180, 255, 255])
+    lower_green = np.array([30, 30, 50])
+    upper_green = np.array([60, 255, 255])
+    
+    mask = cv2.inRange(hsv, lower_red, upper_red)
+    mask |= cv2.inRange(hsv, lower_red_wrap, upper_red_wrap)
+    mask |= cv2.inRange(hsv, lower_green, upper_green)
+    
     kernel_small = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
-    combined = cv2.morphologyEx(combined, cv2.MORPH_OPEN, kernel_small, iterations=2)
+    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel_small)
+    
+    kernel_medium = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (15, 15))
+    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel_medium)
+    
+    contours_temp, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    solid_mask = np.zeros_like(mask)
+    if contours_temp:
+        for cnt in contours_temp:
+            if cv2.contourArea(cnt) > 500:
+                cv2.drawContours(solid_mask, [cnt], -1, 255, thickness=cv2.FILLED)
+    mask = solid_mask
 
-    # Apply mask
-    mask_3ch = cv2.merge([combined, combined, combined])
-    return cv2.bitwise_and(image, mask_3ch)
+    # ---------------------------------------------------------
+    # 2. VŨ KHÍ TỐI THƯỢNG: CENTER BIAS (Khoảng cách tới tâm)
+    # ---------------------------------------------------------
+    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    if not contours:
+        return cv2.resize(image, (img_size, img_size))
+        
+    H, W = image.shape[:2]
+    center_x, center_y = W // 2, H // 2  # Tọa độ tâm của bức ảnh
+    
+    best_cnt = None
+    min_dist = float('inf')
+    
+    for cnt in contours:
+        # Bỏ qua các hạt bụi hoặc nhiễu quá nhỏ
+        if cv2.contourArea(cnt) < 1000:
+            continue
+            
+        # Tính Trọng tâm (Centroid) của khối màu bằng cv2.moments
+        M = cv2.moments(cnt)
+        if M["m00"] != 0:
+            cx = int(M["m10"] / M["m00"])
+            cy = int(M["m01"] / M["m00"])
+        else:
+            cx, cy = 0, 0
+            
+        # Tính khoảng cách từ Trọng tâm vật thể tới Tâm bức ảnh
+        dist = (cx - center_x)**2 + (cy - center_y)**2
+        
+        # Chọn vật thể CÓ KHOẢNG CÁCH GẦN TÂM NHẤT
+        if dist < min_dist:
+            min_dist = dist
+            best_cnt = cnt
+            
+    # Nếu lọc xong không còn gì, trả về ảnh gốc
+    if best_cnt is None:
+        return cv2.resize(image, (img_size, img_size))
+    
+    # ---------------------------------------------------------
+    # 3. CẮT CÚP & PADDING (Giữ nguyên)
+    # ---------------------------------------------------------
+    x, y, w, h = cv2.boundingRect(best_cnt)
+    x, y = max(0, x), max(0, y)
+    w, h = min(W - x, w), min(H - y, h)
+    
+    cropped_roi = image[y:y+h, x:x+w]
+    cropped_mask = mask[y:y+h, x:x+w]
+    
+    roi_bg_removed = cv2.bitwise_and(cropped_roi, cropped_roi, mask=cropped_mask)
+    
+    h_crop, w_crop = roi_bg_removed.shape[:2]
+    max_side = max(h_crop, w_crop)
+    
+    top = (max_side - h_crop) // 2
+    bottom = max_side - h_crop - top
+    left = (max_side - w_crop) // 2
+    right = max_side - w_crop - left
+    
+    squared_img = cv2.copyMakeBorder(
+        roi_bg_removed, top, bottom, left, right, 
+        cv2.BORDER_CONSTANT, value=[0, 0, 0]
+    )
+    
+    return cv2.resize(squared_img, (img_size, img_size))
 
 def _process_single_image(args):
     """Helper for parallel processing."""
     path, fname, cls, img_size = args
     img = cv2.imread(os.path.join(path, fname))
     if img is None:
-        return None, None, None
+        return None, None, None, None
     
     roi = background_cancellation(img)
     roi = cv2.resize(roi, (img_size, img_size))
@@ -70,7 +124,7 @@ def _process_single_image(args):
     # Also return a resized original for sample visualization
     orig_resized = cv2.cvtColor(cv2.resize(img, (img_size, img_size)), cv2.COLOR_BGR2RGB)
     
-    return roi_rgb, cls, orig_resized
+    return roi_rgb, cls, orig_resized, fname
 
 def load_and_preprocess_images(dataset_dir=DATASET_DIR, img_size=IMG_SIZE,
                                 save_samples=True):
@@ -81,6 +135,7 @@ def load_and_preprocess_images(dataset_dir=DATASET_DIR, img_size=IMG_SIZE,
     Returns:
         images  – np.ndarray of shape (N, img_size, img_size, 3), dtype uint8
         labels  – list of string labels
+        fnames  – list of string filenames
     """
     class_dirs = {
         'Reject': os.path.join(dataset_dir, 'Reject'),
@@ -92,36 +147,38 @@ def load_and_preprocess_images(dataset_dir=DATASET_DIR, img_size=IMG_SIZE,
     print("STEP 1: Loading & Preprocessing (Background Cancellation)")
     print("=" * 60)
 
-    images, labels = [], []
-    samples = {}
-
     tasks = []
     for cls, path in class_dirs.items():
         if not os.path.exists(path):
             print(f"  [WARNING] Not found: {path}")
             continue
         
+        
         files = [f for f in os.listdir(path)
                  if f.lower().endswith(('.jpg', '.jpeg', '.png', '.bmp'))]
+        print(f"  {cls}: {len(files)} images ...")
         print(f"  {cls}: {len(files)} images ...")
         for fname in files:
             tasks.append((path, fname, cls, img_size))
 
     print(f"  Processing {len(tasks)} images in parallel ... ", end="", flush=True)
     
-    images, labels = [], []
+    images, labels, fnames = [], [], []
     samples = {}
     
     with ProcessPoolExecutor() as executor:
         results = list(executor.map(_process_single_image, tasks))
         
-    for roi_rgb, cls, orig_resnet in results:
+    for roi_rgb, cls, orig_resnet, fname in results:
         if roi_rgb is not None:
             images.append(roi_rgb)
             labels.append(cls)
+            fnames.append(fname)
             if cls not in samples:
                 samples[cls] = {'original': orig_resnet, 'preprocessed': roi_rgb}
+                samples[cls] = {'original': orig_resnet, 'preprocessed': roi_rgb}
 
+    print("[OK]")
     print("[OK]")
 
     if save_samples and samples:
@@ -129,7 +186,7 @@ def load_and_preprocess_images(dataset_dir=DATASET_DIR, img_size=IMG_SIZE,
 
     images = np.array(images, dtype=np.uint8)
     print(f"\n  Total: {len(images)} images, shape={images[0].shape}")
-    return images, labels
+    return images, labels, fnames
 
 
 def _save_preprocessing_samples(samples):
@@ -152,24 +209,57 @@ def _save_preprocessing_samples(samples):
     plt.close()
     print(f"  Sample visualization saved to {out}")
 
-def split_dataset(images, labels):
-    """Stratified three-way split."""
+import re
+
+def split_dataset(images, labels, fnames):
+    """Stratified Group-based three-way split to prevent data leakage."""
     print("\n" + "=" * 60)
-    print("STEP 2: Splitting Dataset (70% Train / 10% Val / 20% Test)")
+    print("STEP 2: Splitting Dataset (Group-Aware & Stratified)")
     print("=" * 60)
 
     le = LabelEncoder()
     y = le.fit_transform(labels)
-
-    X_tv, X_te, y_tv, y_te = train_test_split(
-        images, y, test_size=TEST_SIZE,
-        stratify=y, random_state=RANDOM_STATE,
+    
+    # Extract Group IDs from filenames to avoid data leakage
+    groups = []
+    for fname in fnames:
+        match = re.match(r"^(\d+)", fname)
+        if match:
+            groups.append(match.group(1))
+        else:
+            groups.append(fname)
+            
+    groups = np.array(groups)
+    
+    # Get unique groups and their corresponding label
+    unique_groups = np.unique(groups)
+    group_labels = []
+    for g in unique_groups:
+        idx = np.where(groups == g)[0][0]
+        group_labels.append(y[idx])
+        
+    unique_groups = np.array(unique_groups)
+    group_labels = np.array(group_labels)
+    
+    # Stratified split on the unique groups
+    g_tv, g_te, gy_tv, gy_te = train_test_split(
+        unique_groups, group_labels, test_size=TEST_SIZE, 
+        stratify=group_labels, random_state=RANDOM_STATE
     )
-
-    X_tr, X_v, y_tr, y_v = train_test_split(
-        X_tv, y_tv, test_size=VAL_SIZE_FROM_TRAINVAL,
-        stratify=y_tv, random_state=RANDOM_STATE,
+    
+    g_tr, g_v, gy_tr, gy_v = train_test_split(
+        g_tv, gy_tv, test_size=VAL_SIZE_FROM_TRAINVAL, 
+        stratify=gy_tv, random_state=RANDOM_STATE
     )
+    
+    # Map groups back to images
+    train_mask = np.isin(groups, g_tr)
+    val_mask = np.isin(groups, g_v)
+    test_mask = np.isin(groups, g_te)
+    
+    X_tr, y_tr = images[train_mask], y[train_mask]
+    X_v, y_v = images[val_mask], y[val_mask]
+    X_te, y_te = images[test_mask], y[test_mask]
 
     n = len(images)
     print(f"  Train: {len(X_tr)} ({len(X_tr)/n*100:.1f}%)")
