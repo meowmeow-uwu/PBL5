@@ -41,20 +41,67 @@ def main():
     visualization.RESULTS_DIR = TRAIN_CACHUA_RESULTS_DIR
 
     # 1. Load Data
-    print("Loading Dataset_Cachua...")
-    images_1, labels_1, fnames_1 = preprocessing.load_and_preprocess_images(dataset_dir=DATASET_CACHUA_DIR)
+    print("Loading Dataset_Cachua Train...")
+    X_tr_full, labels_tr_full, fnames_tr_full = preprocessing.load_and_preprocess_images(dataset_dir=os.path.join(DATASET_CACHUA_DIR, "train"))
     
-    print("Loading Dataset Three Classes...")
-    images_2, labels_2, fnames_2 = preprocessing.load_and_preprocess_images(dataset_dir=DATASET_DIR, save_samples=False)
+    print("Loading Dataset_Cachua Test...")
+    X_te, labels_te, fnames_te = preprocessing.load_and_preprocess_images(dataset_dir=os.path.join(DATASET_CACHUA_DIR, "test"), save_samples=False)
     
-    # Combine datasets
-    images = np.concatenate([images_1, images_2], axis=0)
-    labels = np.concatenate([labels_1, labels_2], axis=0)
-    fnames = fnames_1 + fnames_2
-    
-    # 2. Split (Combines both datasets into Train, Val, Test)
-    X_tr, X_v, X_te, y_tr, y_v, y_te, le = preprocessing.split_dataset(images, labels, fnames)
+    # 2. Process Labels & Split Val from Train
+    from sklearn.preprocessing import LabelEncoder
+    from sklearn.model_selection import train_test_split
+    import re
+
+    le = LabelEncoder()
+    y_tr_full = le.fit_transform(labels_tr_full)
+    y_te = le.transform(labels_te)
     num_classes = len(le.classes_)
+    
+    # Extract Group IDs to prevent data leakage in train/val split
+    groups = []
+    for fname in fnames_tr_full:
+        match = re.match(r"^(\d+)", fname)
+        if match:
+            groups.append(match.group(1))
+        else:
+            groups.append(fname)
+            
+    groups = np.array(groups)
+    
+    unique_groups = np.unique(groups)
+    group_labels = []
+    for g in unique_groups:
+        idx = np.where(groups == g)[0][0]
+        group_labels.append(y_tr_full[idx])
+        
+    unique_groups = np.array(unique_groups)
+    group_labels = np.array(group_labels)
+    
+    from config import VAL_SIZE_FROM_TRAINVAL
+    # Split Val from Train
+    g_tr, g_v, _, _ = train_test_split(
+        unique_groups, group_labels, test_size=VAL_SIZE_FROM_TRAINVAL, 
+        stratify=group_labels, random_state=RANDOM_STATE
+    )
+    
+    train_mask = np.isin(groups, g_tr)
+    val_mask = np.isin(groups, g_v)
+    
+    X_tr, y_tr = X_tr_full[train_mask], y_tr_full[train_mask]
+    X_v, y_v = X_tr_full[val_mask], y_tr_full[val_mask]
+
+    n = len(X_tr_full) + len(X_te)
+    print("\n" + "=" * 60)
+    print("Dataset Split Summary")
+    print("=" * 60)
+    print(f"  Train: {len(X_tr)} ({len(X_tr)/n*100:.1f}%)")
+    print(f"  Val:   {len(X_v)}  ({len(X_v)/n*100:.1f}%)")
+    print(f"  Test:  {len(X_te)} ({len(X_te)/n*100:.1f}%)")
+
+    for tag, ys in [("Train", y_tr), ("Val", y_v), ("Test", y_te)]:
+        counts = np.bincount(ys)
+        dist = ", ".join(f"{le.classes_[i]}: {counts[i]}" for i in range(len(counts)))
+        print(f"    {tag}: {dist}")
     
     # 3. Augment & Balance (Dynamic and memory efficient)
     train_indices = augmentation.get_balanced_indices(y_tr)
