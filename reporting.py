@@ -112,7 +112,9 @@ def _save_evaluation_table(results):
         ("Accuracy (%)", "accuracy"),
         ("Precision (%)", "precision"),
         ("Recall (%)", "recall"),
-        ("F1-score (%)", "f1_score")
+        ("F1-score (%)", "f1_score"),
+        ("Train Time (s)", "train_time"),
+        ("Infer Time (s)", "inference_time")
     ]
     
     for method_name in ["SVM", "Random Forest", "K-NN", "Gaussian NB", "CNN"]:
@@ -134,7 +136,7 @@ def _save_evaluation_table(results):
         
     data = data[:-1]
     columns = ["Method", "Metric", "RGB", "HSV", "CIE Lab", "YCbCr"]
-    col_widths = [10, 17, 10, 10, 10, 10]
+    col_widths = [12, 20, 10, 10, 10, 10]
     
     output_filename = os.path.join(RESULTS_DIR, "table_evaluation_results.txt")
     with open(output_filename, 'w', encoding='utf-8') as f:

@@ -5,6 +5,7 @@ Traditional ML Training: Feature extraction + GridSearchCV for SVM, RF, KNN, GNB
 import os
 import numpy as np
 import joblib
+import time
 
 from config import RANDOM_STATE
 from evaluation import compute_metrics
@@ -45,7 +46,7 @@ def train_traditional_ml(X_tr_rgb, X_te_rgb, y_tr, y_te, color_space, num_classe
             'params': {
                 'C': [0.1, 1, 10, 100],
                 'gamma': ['scale', 'auto', 0.001, 0.01, 0.1, 1],
-                'kernel': ['rbf', 'poly']
+                'kernel': ['rbf', 'poly', 'linear']
             }
         },
         'Random Forest': {
@@ -78,17 +79,24 @@ def train_traditional_ml(X_tr_rgb, X_te_rgb, y_tr, y_te, color_space, num_classe
     
     for name, config in param_grids.items():
         print(f"  GridSearchCV for {name}...")
+        t0_train = time.time()
         grid = GridSearchCV(config['model'], config['params'], cv=cv, scoring='accuracy', n_jobs=-1, verbose=1)
         grid.fit(X_tr_feat_sc, y_tr)
+        t1_train = time.time()
         best_model = grid.best_estimator_
         best_models[name] = best_model
         
         print(f"    Best params: {grid.best_params_}")
+        
+        t0_inf = time.time()
         y_pred = best_model.predict(X_te_feat_sc)
+        t1_inf = time.time()
         
         metrics = compute_metrics(y_te, y_pred, num_classes)
         metrics['y_pred'] = y_pred
         metrics['best_params'] = grid.best_params_
+        metrics['train_time'] = t1_train - t0_train
+        metrics['inference_time'] = t1_inf - t0_inf
         
         model_save_path = os.path.join(CS_RESULTS_DIR, f"{name.replace(' ', '_').lower()}_best.pkl")
         joblib.dump({

@@ -79,24 +79,81 @@ class FocalLoss(nn.Module):
         else:
             return focal_loss
 
-class CNN(nn.Module):
-    def __init__(self, num_classes, dropout_rate=0.5):
-        super(CNN, self).__init__()
-        self.conv = nn.Sequential(
-            nn.Conv2d(3, 32, 3, padding=1), nn.ReLU(), nn.MaxPool2d(2, 2),
-            nn.Conv2d(32, 64, 3, padding=1), nn.ReLU(), nn.MaxPool2d(2, 2),
-            nn.Conv2d(64, 128, 3, padding=1), nn.ReLU(), nn.MaxPool2d(2, 2)
-        )
-        self.fc = nn.Sequential(
-            nn.Flatten(),
-            nn.Linear(128 * 16 * 16, 128), # Ảnh 128x128 qua 3 lần MaxPool còn 16x16
-            nn.ReLU(),
-            nn.Dropout(dropout_rate),
-            nn.Linear(128, num_classes)
-        )
-    def forward(self, x):
-        return self.fc(self.conv(x))
+import torch
+import torch.nn as nn
 
+# 1. Khối Cơ chế Chú ý (Squeeze-and-Excitation)
+class SEBlock(nn.Module):
+    def __init__(self, in_channels, reduction=16):
+        super(SEBlock, self).__init__()
+        self.avg_pool = nn.AdaptiveAvgPool2d(1)
+        self.fc = nn.Sequential(
+            nn.Linear(in_channels, in_channels // reduction, bias=False),
+            nn.ReLU(inplace=True),
+            nn.Linear(in_channels // reduction, in_channels, bias=False),
+            nn.Sigmoid()
+        )
+
+    def forward(self, x):
+        b, c, _, _ = x.size()
+        y = self.avg_pool(x).view(b, c) # Squeeze
+        y = self.fc(y).view(b, c, 1, 1) # Excitation
+        return x * y.expand_as(x)       # Re-weighting
+
+# 2. Khối Tích chập siêu nhẹ (Depthwise Separable + SE)
+class LightweightBlock(nn.Module):
+    def __init__(self, in_channels, out_channels, stride=1):
+        super(LightweightBlock, self).__init__()
+        # Depthwise Conv (Học Không gian)
+        self.depthwise = nn.Conv2d(in_channels, in_channels, kernel_size=3, 
+                                   stride=stride, padding=1, groups=in_channels, bias=False)
+        self.bn1 = nn.BatchNorm2d(in_channels)
+        
+        # Pointwise Conv (Học Màu sắc/Đặc trưng kênh)
+        self.pointwise = nn.Conv2d(in_channels, out_channels, kernel_size=1, bias=False)
+        self.bn2 = nn.BatchNorm2d(out_channels)
+        self.relu = nn.ReLU(inplace=True)
+        
+        # Gắn Attention
+        self.se = SEBlock(out_channels)
+
+    def forward(self, x):
+        x = self.relu(self.bn1(self.depthwise(x)))
+        x = self.relu(self.bn2(self.pointwise(x)))
+        x = self.se(x) # Nhấn mạnh các đặc trưng quan trọng
+        return x
+
+class CNN(nn.Module):
+    def __init__(self, num_classes):
+        super(CNN, self).__init__()
+        
+        # Lớp tiếp nhận ảnh ban đầu
+        self.stem = nn.Sequential(
+            nn.Conv2d(3, 32, kernel_size=3, stride=2, padding=1, bias=False),
+            nn.BatchNorm2d(32),
+            nn.ReLU(inplace=True)
+        )
+        
+        # Các khối rút đặc trưng chính (Nhẹ và thông minh)
+        self.features = nn.Sequential(
+            LightweightBlock(32, 64, stride=2),
+            LightweightBlock(64, 128, stride=2),
+            LightweightBlock(128, 256, stride=2)
+        )
+        
+        # Lớp đầu ra sử dụng GAP (Không dùng Flatten)
+        self.classifier = nn.Sequential(
+            nn.AdaptiveAvgPool2d(1), # Ép kích thước về 1x1
+            nn.Flatten(),
+            nn.Dropout(0.15),
+            nn.Linear(256, num_classes) # Siêu nhẹ, chỉ có 256 x 3 tham số
+        )
+
+    def forward(self, x):
+        x = self.stem(x)
+        x = self.features(x)
+        x = self.classifier(x)
+        return x
 
 def preprocess_input(X):
     """

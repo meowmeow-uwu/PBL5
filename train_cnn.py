@@ -4,6 +4,7 @@ CNN Training: Train CNN model with channel importance analysis.
 
 import gc
 import os
+import time
 import torch
 import numpy as np
 from torch.utils.data import DataLoader
@@ -38,17 +39,21 @@ def train_paper_cnn(X_tr_rgb, X_v_rgb, X_te_rgb, y_tr, y_v, y_te, color_space, n
     cnn_model = CNN(num_classes).to(device)
     cnn_save_dir = os.path.join(CS_RESULTS_DIR, "CNN_model")
     
+    t0_train = time.time()
     cnn_model, _ = train_cnn(
         cnn_model, train_loader, val_loader,
         epochs=FINE_TUNE_EPOCHS, device=device,
         checkpoint_dir=cnn_save_dir, prefix="CNN",
         class_weights=class_weights
     )
+    t1_train = time.time()
     
     # Evaluate on test set
     cnn_model.eval()
     cnn_preds = []
     cnn_probs = []
+    
+    t0_inf = time.time()
     with torch.no_grad():
         for inputs, _ in test_loader:
             outputs = cnn_model(inputs.to(device))
@@ -56,12 +61,15 @@ def train_paper_cnn(X_tr_rgb, X_v_rgb, X_te_rgb, y_tr, y_v, y_te, color_space, n
             _, preds = torch.max(outputs, 1)
             cnn_preds.extend(preds.cpu().numpy())
             cnn_probs.extend(probs.cpu().numpy())
+    t1_inf = time.time()
             
     cnn_preds = np.array(cnn_preds)
     cnn_probs = np.array(cnn_probs)
     
     cnn_metrics = compute_metrics(y_te, cnn_preds, num_classes)
     cnn_metrics['y_pred'] = cnn_preds
+    cnn_metrics['train_time'] = t1_train - t0_train
+    cnn_metrics['inference_time'] = t1_inf - t0_inf
     
     # Channel importance via permutation
     print("    Computing channel importance for CNN...")
