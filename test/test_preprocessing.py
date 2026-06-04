@@ -177,7 +177,6 @@ def background_cancellation_center_bias(image, img_size=299):
     # ---------------------------------------------------------
     hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
     
-    # Tăng nhẹ Độ bão hòa (S) lên 35 để chặn đứng các sàn nhà/băng tải sáng màu
     lower_red = np.array([0, 35, 50]) 
     upper_red = np.array([30, 255, 255])
     lower_red_wrap = np.array([160, 35, 50])
@@ -189,15 +188,15 @@ def background_cancellation_center_bias(image, img_size=299):
     mask |= cv2.inRange(hsv, lower_red_wrap, upper_red_wrap)
     mask |= cv2.inRange(hsv, lower_green, upper_green)
 
-    mask[0:int(H * 0.15), :] = 0
-    mask[int(H * 0.85):H, :] = 0
+    # ĐÃ XÓA TẤM KHIÊN 15% Ở ĐÂY!!! 
+    # Khung hình bây giờ hoàn toàn tự do để lấy trọn quả cà chua to.
 
-    # 2. CÁI KÉO: Cắt đứt các râu ria dính với rác
+    # 2. CÁI KÉO: Cắt rác vụn
     kernel_open = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 7)) 
     mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel_open)
 
     # ---------------------------------------------------------
-    # 3. CENTER BIAS: Lấy đúng 1 khối màu ở giữa
+    # 3. CENTER BIAS: Lấy khối màu ở giữa
     # ---------------------------------------------------------
     contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     if not contours:
@@ -226,30 +225,27 @@ def background_cancellation_center_bias(image, img_size=299):
         return cv2.resize(image, (img_size, img_size))
     
     # ---------------------------------------------------------
-    # 4. HÌNH DÁNG BẢN NGÃ (Natural Shape)
+    # 4. HÌNH DÁNG BẢN NGÃ & BỘT TRÉT TƯỜNG (Kernel 25)
     # ---------------------------------------------------------
     final_mask = np.zeros((H, W), dtype=np.uint8)
     
-    # Đổ mực vào đường viền tự nhiên
+    # Đổ mực đặc (Lúc này không bị phạt đỉnh nữa, hố sẽ tự động lấp kín)
     cv2.drawContours(final_mask, [best_cnt], -1, 255, thickness=cv2.FILLED)
     
-    # BÍ QUYẾT: Dùng Kernel cực lớn (61x61) để lấp các "vịnh" khổng lồ.
-    # Vì lúc này rác nền đã bị loại bỏ 100%, phép Close sẽ tự tin lấp đầy vết khuyết 
-    # và bo tròn mép quả một cách hoàn hảo mà không sợ dính rác băng tải!
-    kernel_close = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (21, 21))
+    # Xoa dịu vết cắt bo tròn mép
+    kernel_close = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (25, 25))
     final_mask = cv2.morphologyEx(final_mask, cv2.MORPH_CLOSE, kernel_close)
     
     # ---------------------------------------------------------
-    # 5. CẮT CÚP & PADDING (Sát rạt viền)
+    # 5. CẮT CÚP & PADDING VUÔNG CHUẨN
     # ---------------------------------------------------------
-    # Tìm lại viền sau khi đã "trét bột" để lấy khung cắt chuẩn nhất
+    # Lấy contour cuối cùng để cắt khung
     contours_final, _ = cv2.findContours(final_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     if not contours_final:
         return cv2.resize(image, (img_size, img_size))
 
     cnt_final = max(contours_final, key=cv2.contourArea)
     
-    # Tính Bounding Box mới
     x, y, w_rect, h_rect = cv2.boundingRect(cnt_final)
     x, y = max(0, x), max(0, y)
     w_rect, h_rect = min(W - x, w_rect), min(H - y, h_rect)
@@ -273,7 +269,6 @@ def background_cancellation_center_bias(image, img_size=299):
     )
     
     return cv2.resize(squared_img, (img_size, img_size))
-
 def test_single_image(img_path):
     print(f"Testing image: {img_path}")
     img = cv2.imread(img_path)
