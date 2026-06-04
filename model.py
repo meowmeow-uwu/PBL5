@@ -124,7 +124,7 @@ class LightweightBlock(nn.Module):
         return x
 
 class CNN(nn.Module):
-    def __init__(self, num_classes):
+    def __init__(self, num_classes, dropout_rate=0.15):
         super(CNN, self).__init__()
         
         # Lớp tiếp nhận ảnh ban đầu
@@ -145,7 +145,7 @@ class CNN(nn.Module):
         self.classifier = nn.Sequential(
             nn.AdaptiveAvgPool2d(1), # Ép kích thước về 1x1
             nn.Flatten(),
-            nn.Dropout(0.15),
+            nn.Dropout(dropout_rate),
             nn.Linear(256, num_classes) # Siêu nhẹ, chỉ có 256 x 3 tham số
         )
 

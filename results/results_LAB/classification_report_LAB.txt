@@ -60,15 +60,16 @@ weighted avg       0.79      0.78      0.77       199
 
 ============================================================
 Classification Report (CNN)
+Optimal Parameters: {'batch_size': 32, 'learning_rate': 0.0005, 'dropout_rate': 0.15}
 ============================================================
               precision    recall  f1-score   support
 
-      Reject       0.98      0.91      0.94        55
-        Ripe       0.93      0.99      0.96        81
-      Unripe       1.00      0.98      0.99        63
+      Reject       1.00      0.96      0.98        55
+        Ripe       0.98      1.00      0.99        81
+      Unripe       1.00      1.00      1.00        63
 
-    accuracy                           0.96       199
-   macro avg       0.97      0.96      0.96       199
-weighted avg       0.97      0.96      0.96       199
+    accuracy                           0.99       199
+   macro avg       0.99      0.99      0.99       199
+weighted avg       0.99      0.99      0.99       199
 
 

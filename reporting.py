@@ -227,6 +227,11 @@ def save_absolute_best_model(global_results):
     if best_overall_info:
         info_path = os.path.join(RESULTS_DIR, "best_model_info.json")
         
+        # Determine the correct metrics for the best model to fetch best_params
+        best_metrics = global_results[best_overall_info['model_name']][best_overall_info['color_space']]
+        if 'best_params' in best_metrics:
+            best_overall_info['best_params'] = best_metrics['best_params']
+        
         if best_overall_info['model_name'] == 'CNN':
             best_overall_info['model_path'] = os.path.join(RESULTS_DIR, f"results_{best_overall_info['color_space']}", "CNN_model", "CNN_best.pth")
             best_overall_info['model_type'] = 'CNN'
