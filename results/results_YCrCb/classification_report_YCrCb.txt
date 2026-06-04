@@ -4,13 +4,13 @@ Optimal Parameters: {'C': 100, 'gamma': 0.1, 'kernel': 'rbf'}
 ============================================================
               precision    recall  f1-score   support
 
-      Reject       0.98      0.87      0.92        55
-        Ripe       0.92      1.00      0.96        81
-      Unripe       1.00      0.98      0.99        63
+      Reject       0.67      0.87      0.76        55
+        Ripe       0.93      0.93      0.93        98
+      Unripe       1.00      0.83      0.91        99
 
-    accuracy                           0.96       199
-   macro avg       0.97      0.95      0.96       199
-weighted avg       0.96      0.96      0.96       199
+    accuracy                           0.88       252
+   macro avg       0.87      0.88      0.86       252
+weighted avg       0.90      0.88      0.88       252
 
 
 ============================================================
@@ -19,13 +19,13 @@ Optimal Parameters: {'max_depth': None, 'min_samples_leaf': 1, 'min_samples_spli
 ============================================================
               precision    recall  f1-score   support
 
-      Reject       1.00      0.78      0.88        55
-        Ripe       0.86      1.00      0.93        81
-      Unripe       1.00      0.98      0.99        63
+      Reject       0.74      0.78      0.76        55
+        Ripe       0.84      0.93      0.88        98
+      Unripe       1.00      0.87      0.93        99
 
-    accuracy                           0.93       199
-   macro avg       0.95      0.92      0.93       199
-weighted avg       0.94      0.93      0.93       199
+    accuracy                           0.87       252
+   macro avg       0.86      0.86      0.86       252
+weighted avg       0.88      0.87      0.87       252
 
 
 ============================================================
@@ -34,13 +34,13 @@ Optimal Parameters: {'metric': 'manhattan', 'n_neighbors': 3, 'weights': 'distan
 ============================================================
               precision    recall  f1-score   support
 
-      Reject       0.98      0.80      0.88        55
-        Ripe       0.87      0.99      0.92        81
-      Unripe       1.00      0.98      0.99        63
+      Reject       0.72      0.80      0.76        55
+        Ripe       0.86      0.93      0.89        98
+      Unripe       1.00      0.86      0.92        99
 
-    accuracy                           0.93       199
-   macro avg       0.95      0.92      0.93       199
-weighted avg       0.94      0.93      0.93       199
+    accuracy                           0.87       252
+   macro avg       0.86      0.86      0.86       252
+weighted avg       0.88      0.87      0.88       252
 
 
 ============================================================
@@ -49,27 +49,27 @@ Optimal Parameters: {'var_smoothing': 1e-10}
 ============================================================
               precision    recall  f1-score   support
 
-      Reject       0.71      0.44      0.54        55
-        Ripe       0.62      0.91      0.74        81
-      Unripe       1.00      0.73      0.84        63
+      Reject       0.50      0.44      0.47        55
+        Ripe       0.64      0.83      0.72        98
+      Unripe       1.00      0.79      0.88        99
 
-    accuracy                           0.72       199
-   macro avg       0.78      0.69      0.71       199
-weighted avg       0.76      0.72      0.72       199
+    accuracy                           0.73       252
+   macro avg       0.71      0.68      0.69       252
+weighted avg       0.75      0.73      0.73       252
 
 
 ============================================================
 Classification Report (CNN)
-Optimal Parameters: {'batch_size': 16, 'learning_rate': 0.0005, 'dropout_rate': 0.15}
+Optimal Parameters: {'batch_size': 32, 'learning_rate': 0.0005, 'dropout_rate': 0.3}
 ============================================================
               precision    recall  f1-score   support
 
-      Reject       0.98      0.91      0.94        55
-        Ripe       0.93      0.99      0.96        81
-      Unripe       1.00      0.98      0.99        63
+      Reject       0.74      0.91      0.81        55
+        Ripe       0.91      0.88      0.90        98
+      Unripe       0.96      0.87      0.91        99
 
-    accuracy                           0.96       199
-   macro avg       0.97      0.96      0.96       199
-weighted avg       0.97      0.96      0.96       199
+    accuracy                           0.88       252
+   macro avg       0.87      0.89      0.87       252
+weighted avg       0.89      0.88      0.88       252
 
 
