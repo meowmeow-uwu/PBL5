@@ -11,3 +11,4 @@ wheels/
 Dataset
 .env
 AI-SERVER/.env
+/test
