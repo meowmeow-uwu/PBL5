@@ -1,7 +1,7 @@
 {
     "model_name": "CNN",
     "color_space": "HSV",
-    "accuracy": 99.49748743718592,
+    "accuracy": 100.0,
     "model_path": "results/results_HSV/CNN_model/CNN_best.pth",
     "model_type": "CNN"
 }

@@ -14,6 +14,13 @@ from config import FINE_TUNE_EPOCHS
 from model import CNN, train_cnn, FruitDataset
 from evaluation import compute_metrics
 import preprocessing
+from torchvision import transforms
+
+train_transform = transforms.Compose([
+    transforms.RandomRotation(20),
+    transforms.RandomAffine(degrees=0, translate=(0.1, 0.1), scale=(0.8, 1.2)),
+    transforms.RandomHorizontalFlip(p=0.5)
+])
 
 param_grid_cnn = {
     'batch_size': [16, 32],
@@ -49,7 +56,7 @@ def train_paper_cnn(X_tr_rgb, X_v_rgb, X_te_rgb, y_tr, y_v, y_te, color_space, n
         print(f"\n    [Grid Search] Trial: batch_size={bs}, lr={lr}, dropout_rate={dr}")
         
         train_loader = DataLoader(
-            FruitDataset(X_tr_rgb, y_tr.astype(np.int64), color_space=color_space),
+            FruitDataset(X_tr_rgb, y_tr.astype(np.int64), transform=train_transform, color_space=color_space),
             batch_size=int(bs), shuffle=True, num_workers=4, pin_memory=True
         )
         val_loader = DataLoader(

@@ -16,8 +16,9 @@ from config import DATASET_DIR, RESULTS_DIR, IMG_SIZE
 def background_cancellation(image, img_size=299):
     H, W = image.shape[:2]
     center_img_x, center_img_y = W // 2, H // 2
-    hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
 
+    hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+    
     lower_red = np.array([0, 35, 50]) 
     upper_red = np.array([30, 255, 255])
     lower_red_wrap = np.array([160, 35, 50])
@@ -28,9 +29,6 @@ def background_cancellation(image, img_size=299):
     mask = cv2.inRange(hsv, lower_red, upper_red)
     mask |= cv2.inRange(hsv, lower_red_wrap, upper_red_wrap)
     mask |= cv2.inRange(hsv, lower_green, upper_green)
-
-    mask[0:int(H * 0.15), :] = 0
-    mask[int(H * 0.85):H, :] = 0
 
     kernel_open = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 7)) 
     mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel_open)
@@ -65,7 +63,7 @@ def background_cancellation(image, img_size=299):
 
     cv2.drawContours(final_mask, [best_cnt], -1, 255, thickness=cv2.FILLED)
 
-    kernel_close = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (21, 21))
+    kernel_close = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (25, 25))
     final_mask = cv2.morphologyEx(final_mask, cv2.MORPH_CLOSE, kernel_close)
 
     contours_final, _ = cv2.findContours(final_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
@@ -73,7 +71,7 @@ def background_cancellation(image, img_size=299):
         return cv2.resize(image, (img_size, img_size))
 
     cnt_final = max(contours_final, key=cv2.contourArea)
-
+    
     x, y, w_rect, h_rect = cv2.boundingRect(cnt_final)
     x, y = max(0, x), max(0, y)
     w_rect, h_rect = min(W - x, w_rect), min(H - y, h_rect)
@@ -97,7 +95,6 @@ def background_cancellation(image, img_size=299):
     )
     
     return cv2.resize(squared_img, (img_size, img_size))
-
 
 def convert_color_spaces(roi_rgb):
     """ Nhận ảnh RGB đã cắt nền, trả về 4 định dạng """

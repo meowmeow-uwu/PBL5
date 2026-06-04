@@ -198,7 +198,7 @@ def predict():
         t_response = time.time()
         print(f"[LOG] [{request_id}] 3. Returned result to ESP32. (HTTP response time: {t_response - t_received:.2f}s)")
         return jsonify({
-            "id": int(request_id),
+            "id": str(request_id),
             "result": result_label,
             "confidence": round(confidence, 2)
         }), 200
