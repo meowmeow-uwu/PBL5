@@ -16,14 +16,15 @@ import visualization
 
 
 def compute_and_plot_roc(models_dict, X_test_dict, y_test, num_classes, le, save_path, title_prefix):
-    """Plot macro-average ROC curves for all models."""
-    plt.figure(figsize=(10, 8))
+    """Plot ROC curves for each algorithm separately."""
     y_test_bin = label_binarize(y_test, classes=range(num_classes))
     if num_classes == 2:
         y_test_bin = np.hstack((1 - y_test_bin, y_test_bin))
 
-    colors = ['blue', 'green', 'red', 'purple', 'orange', 'cyan']
-    for i, (name, clf) in enumerate(models_dict.items()):
+    dir_name = os.path.dirname(save_path)
+    base_name = os.path.basename(save_path).replace(".png", "")
+
+    for name, clf in models_dict.items():
         X_te = X_test_dict[name]
         if hasattr(clf, "predict_proba"):
             y_score = clf.predict_proba(X_te)
@@ -37,6 +38,11 @@ def compute_and_plot_roc(models_dict, X_test_dict, y_test, num_classes, le, save
         fpr = dict()
         tpr = dict()
         roc_auc = dict()
+        
+        # Micro-average
+        fpr["micro"], tpr["micro"], _ = roc_curve(y_test_bin.ravel(), y_score.ravel())
+        roc_auc["micro"] = auc(fpr["micro"], tpr["micro"])
+        
         for i_c in range(num_classes):
             fpr[i_c], tpr[i_c], _ = roc_curve(y_test_bin[:, i_c], y_score[:, i_c])
             roc_auc[i_c] = auc(fpr[i_c], tpr[i_c])
@@ -52,19 +58,35 @@ def compute_and_plot_roc(models_dict, X_test_dict, y_test, num_classes, le, save
         tpr["macro"] = mean_tpr
         roc_auc["macro"] = auc(fpr["macro"], tpr["macro"])
         
-        plt.plot(fpr["macro"], tpr["macro"], color=colors[i % len(colors)], lw=2,
-                 label=f'{name} (macro-average AUC = {roc_auc["macro"]:.2f})')
+        plt.figure(figsize=(10, 8))
+        
+        colors = ['blue', 'green', 'red', 'purple', 'orange', 'cyan']
+        for i_c, color in zip(range(num_classes), colors):
+            class_name = le.inverse_transform([i_c])[0]
+            plt.plot(fpr[i_c], tpr[i_c], color=color, lw=2,
+                     label=f'{class_name} (AUC = {roc_auc[i_c]:.2f})')
+                     
+        plt.plot(fpr["micro"], tpr["micro"],
+                 label=f'micro-average (AUC = {roc_auc["micro"]:.2f})',
+                 color='deeppink', linestyle=':', linewidth=4)
 
-    plt.plot([0, 1], [0, 1], 'k--', lw=2)
-    plt.xlim([0.0, 1.0])
-    plt.ylim([0.0, 1.05])
-    plt.xlabel('False Positive Rate')
-    plt.ylabel('True Positive Rate')
-    plt.title(f'ROC Curve - {title_prefix}')
-    plt.legend(loc="lower right")
-    plt.grid(alpha=0.3)
-    plt.savefig(save_path, dpi=150)
-    plt.close()
+        plt.plot(fpr["macro"], tpr["macro"],
+                 label=f'macro-average (AUC = {roc_auc["macro"]:.2f})',
+                 color='navy', linestyle=':', linewidth=4)
+        
+        plt.plot([0, 1], [0, 1], 'k--', lw=2)
+        plt.xlim([0.0, 1.0])
+        plt.ylim([0.0, 1.05])
+        plt.xlabel('False Positive Rate')
+        plt.ylabel('True Positive Rate')
+        plt.title(f'ROC Curve - {name} ({title_prefix})')
+        plt.legend(loc="lower right")
+        plt.grid(alpha=0.3)
+        
+        safe_name = name.replace(" ", "_")
+        model_save_path = os.path.join(dir_name, f"{base_name}_{safe_name}.png")
+        plt.savefig(model_save_path, dpi=150)
+        plt.close()
 
 
 def save_and_visualize_reports(all_results, best_models, X_te_feat_sc, cnn_probs, y_te, num_classes, le, color_space, CS_RESULTS_DIR):
