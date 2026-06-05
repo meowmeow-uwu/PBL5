@@ -9,8 +9,9 @@ import itertools
 import torch
 import numpy as np
 from torch.utils.data import DataLoader
+import random
 
-from config import FINE_TUNE_EPOCHS
+from config import FINE_TUNE_EPOCHS, RANDOM_STATE
 from model import CNN, train_cnn, FruitDataset
 from evaluation import compute_metrics
 import preprocessing
@@ -55,9 +56,18 @@ def train_paper_cnn(X_tr_rgb, X_v_rgb, X_te_rgb, y_tr, y_v, y_te, color_space, n
         
         print(f"\n    [Grid Search] Trial: batch_size={bs}, lr={lr}, dropout_rate={dr}")
         
+        g = torch.Generator()
+        g.manual_seed(RANDOM_STATE)
+
+        def seed_worker(worker_id):
+            worker_seed = torch.initial_seed() % 2**32
+            np.random.seed(worker_seed)
+            random.seed(worker_seed)
+
         train_loader = DataLoader(
             FruitDataset(X_tr_rgb, y_tr.astype(np.int64), transform=train_transform, color_space=color_space),
-            batch_size=int(bs), shuffle=True, num_workers=4, pin_memory=True
+            batch_size=int(bs), shuffle=True, num_workers=4, pin_memory=True,
+            worker_init_fn=seed_worker, generator=g
         )
         val_loader = DataLoader(
             FruitDataset(X_v_rgb, y_v.astype(np.int64), color_space=color_space),
@@ -133,6 +143,7 @@ def train_paper_cnn(X_tr_rgb, X_v_rgb, X_te_rgb, y_tr, y_v, y_te, color_space, n
     base_acc = np.mean(cnn_preds == y_te)
     importances = []
     X_te_cs_local = np.array([preprocessing.convert_color_spaces(img)[color_space] for img in X_te_rgb])
+    np.random.seed(RANDOM_STATE)
     for c in range(3):
         X_shuf = X_te_cs_local.copy()
         flat = X_shuf[:, :, :, c].flatten()

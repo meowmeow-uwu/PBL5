@@ -223,7 +223,7 @@ def train_cnn(
     history = {'train_loss': [], 'train_acc': [], 'val_loss': [], 'val_acc': []}
     best_val_loss = float('inf')
     epochs_no_improve = 0
-    early_stopping_patience = 3
+    early_stopping_patience = 5
     
     # Resume training if the last checkpoint exists
     if os.path.exists(last_ckpt_path):
