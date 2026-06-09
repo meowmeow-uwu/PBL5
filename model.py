@@ -11,6 +11,8 @@ import matplotlib.pyplot as plt
 import torch
 import torch.nn as nn
 import torch.optim as optim
+import torch.nn.functional as F
+from torchvision import models
 
 from config import (
     LEARNING_RATE, DROPOUT_1, DROPOUT_2, DENSE_UNITS
@@ -18,83 +20,140 @@ from config import (
 
 # --- Dataset ---
 class FruitDataset(torch.utils.data.Dataset):
-    def __init__(self, images, labels=None):
+    def __init__(self, images, labels=None, transform=None, indices=None, color_space='RGB'):
         self.images = images  # uint8 images (N, H, W, 3)
         self.labels = labels
+        self.transform = transform
+        self.indices = indices if indices is not None else np.arange(len(images))
+        self.color_space = color_space
 
     def __len__(self):
-        return len(self.images)
+        return len(self.indices)
 
     def __getitem__(self, idx):
-        img = self.images[idx]
+        real_idx = self.indices[idx]
+        img = self.images[real_idx]
         
+        if self.color_space != 'RGB':
+            import preprocessing
+            img = preprocessing.convert_color_spaces(img)[self.color_space]
+            
         # Preprocess on the fly (uint8 -> float32)
         img = img.astype(np.float32) / 255.0
         # Transpose to (C, H, W) for PyTorch
         img = np.transpose(img, (2, 0, 1))
-        # Normalize to [-1, 1]
-        img = (img - 0.5) / 0.5
-        
         img_tensor = torch.from_numpy(img)
         
+        if self.transform is not None:
+            img_tensor = self.transform(img_tensor)
+            
+        # Normalize to [-1, 1] after augmentations that might expect [0,1]
+        img_tensor = (img_tensor - 0.5) / 0.5
+        
         if self.labels is not None:
-            label = torch.tensor(self.labels[idx], dtype=torch.long)
+            label = torch.tensor(self.labels[real_idx], dtype=torch.long)
             return img_tensor, label
         return img_tensor
 
 
-# --- Define Model ---
-class CustomCNN(nn.Module):
-    def __init__(self, num_classes):
-        super(CustomCNN, self).__init__()
-        self.features = nn.Sequential(
-            nn.Conv2d(3, 32, kernel_size=3, padding=1),
-            nn.BatchNorm2d(32),
-            nn.ReLU(),
-            nn.MaxPool2d(kernel_size=2, stride=2),
-            
-            nn.Conv2d(32, 64, kernel_size=3, padding=1),
-            nn.BatchNorm2d(64),
-            nn.ReLU(),
-            nn.MaxPool2d(kernel_size=2, stride=2),
-            
-            nn.Conv2d(64, 128, kernel_size=3, padding=1),
-            nn.BatchNorm2d(128),
-            nn.ReLU(),
-            nn.MaxPool2d(kernel_size=2, stride=2),
-            
-            nn.Conv2d(128, 256, kernel_size=3, padding=1),
-            nn.BatchNorm2d(256),
-            nn.ReLU(),
-            nn.MaxPool2d(kernel_size=2, stride=2),
-            
-            nn.Conv2d(256, 512, kernel_size=3, padding=1),
-            nn.BatchNorm2d(512),
-            nn.ReLU(),
-            nn.AdaptiveAvgPool2d((1, 1)) # Global Average Pooling
-        )
+# --- Loss Function ---
+class FocalLoss(nn.Module):
+    def __init__(self, weight=None, gamma=2.0, reduction='mean'):
+        super(FocalLoss, self).__init__()
+        self.weight = weight
+        self.gamma = gamma
+        self.reduction = reduction
+
+    def forward(self, inputs, targets):
+        ce_loss_unweighted = F.cross_entropy(inputs, targets, reduction='none')
+        pt = torch.exp(-ce_loss_unweighted)
+        focal_term = (1 - pt) ** self.gamma
         
-        self.classifier = nn.Sequential(
-            nn.Flatten(),
-            nn.Dropout(DROPOUT_1),
-            nn.Linear(512, DENSE_UNITS),
-            nn.ReLU(),
-            nn.BatchNorm1d(DENSE_UNITS),
-            nn.Dropout(DROPOUT_2),
-            nn.Linear(DENSE_UNITS, num_classes)
-        )
+        ce_loss_weighted = F.cross_entropy(inputs, targets, weight=self.weight, reduction='none')
+        focal_loss = focal_term * ce_loss_weighted
         
+        if self.reduction == 'mean':
+            return focal_loss.mean()
+        elif self.reduction == 'sum':
+            return focal_loss.sum()
+        else:
+            return focal_loss
+
+import torch
+import torch.nn as nn
+
+# 1. Khối Cơ chế Chú ý (Squeeze-and-Excitation)
+class SEBlock(nn.Module):
+    def __init__(self, in_channels, reduction=16):
+        super(SEBlock, self).__init__()
+        self.avg_pool = nn.AdaptiveAvgPool2d(1)
+        self.fc = nn.Sequential(
+            nn.Linear(in_channels, in_channels // reduction, bias=False),
+            nn.ReLU(inplace=True),
+            nn.Linear(in_channels // reduction, in_channels, bias=False),
+            nn.Sigmoid()
+        )
+
     def forward(self, x):
+        b, c, _, _ = x.size()
+        y = self.avg_pool(x).view(b, c) # Squeeze
+        y = self.fc(y).view(b, c, 1, 1) # Excitation
+        return x * y.expand_as(x)       # Re-weighting
+
+# 2. Khối Tích chập siêu nhẹ (Depthwise Separable + SE)
+class LightweightBlock(nn.Module):
+    def __init__(self, in_channels, out_channels, stride=1):
+        super(LightweightBlock, self).__init__()
+        # Depthwise Conv (Học Không gian)
+        self.depthwise = nn.Conv2d(in_channels, in_channels, kernel_size=3, 
+                                   stride=stride, padding=1, groups=in_channels, bias=False)
+        self.bn1 = nn.BatchNorm2d(in_channels)
+        
+        # Pointwise Conv (Học Màu sắc/Đặc trưng kênh)
+        self.pointwise = nn.Conv2d(in_channels, out_channels, kernel_size=1, bias=False)
+        self.bn2 = nn.BatchNorm2d(out_channels)
+        self.relu = nn.ReLU(inplace=True)
+        
+        # Gắn Attention
+        self.se = SEBlock(out_channels)
+
+    def forward(self, x):
+        x = self.relu(self.bn1(self.depthwise(x)))
+        x = self.relu(self.bn2(self.pointwise(x)))
+        x = self.se(x) # Nhấn mạnh các đặc trưng quan trọng
+        return x
+
+class CNN(nn.Module):
+    def __init__(self, num_classes, dropout_rate=0.15):
+        super(CNN, self).__init__()
+        
+        # Lớp tiếp nhận ảnh ban đầu
+        self.stem = nn.Sequential(
+            nn.Conv2d(3, 32, kernel_size=3, stride=2, padding=1, bias=False),
+            nn.BatchNorm2d(32),
+            nn.ReLU(inplace=True)
+        )
+        
+        # Các khối rút đặc trưng chính (Nhẹ và thông minh)
+        self.features = nn.Sequential(
+            LightweightBlock(32, 64, stride=2),
+            LightweightBlock(64, 128, stride=2),
+            LightweightBlock(128, 256, stride=2)
+        )
+        
+        # Lớp đầu ra sử dụng GAP (Không dùng Flatten)
+        self.classifier = nn.Sequential(
+            nn.AdaptiveAvgPool2d(1), # Ép kích thước về 1x1
+            nn.Flatten(),
+            nn.Dropout(dropout_rate),
+            nn.Linear(256, num_classes) # Siêu nhẹ, chỉ có 256 x 3 tham số
+        )
+
+    def forward(self, x):
+        x = self.stem(x)
         x = self.features(x)
         x = self.classifier(x)
         return x
-        
-    def extract_features(self, x):
-        # Result dimension: 512
-        x = self.features(x)
-        x = torch.flatten(x, 1)
-        return x
-
 
 def preprocess_input(X):
     """
@@ -137,7 +196,9 @@ def _plot_history(history, plot_path):
 def train_cnn(
     model, train_loader, val_loader, 
     epochs, device, 
-    checkpoint_dir, prefix="model"
+    checkpoint_dir, prefix="model",
+    class_weights=None,
+    learning_rate=None
 ):
     """
     Train CNN with checkpointing and plotting per epoch.
@@ -148,8 +209,12 @@ def train_cnn(
     best_ckpt_path = os.path.join(checkpoint_dir, f"{prefix}_best.pth")
     plot_path = os.path.join(checkpoint_dir, f"{prefix}_history.png")
     
-    criterion = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
+    if class_weights is not None:
+        class_weights = class_weights.to(device)
+    
+    lr = learning_rate if learning_rate is not None else LEARNING_RATE
+    criterion = FocalLoss(weight=class_weights, gamma=2.0)
+    optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=1e-4)
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(
         optimizer, mode='min', factor=0.5, patience=3, min_lr=1e-7
     )
@@ -158,21 +223,24 @@ def train_cnn(
     history = {'train_loss': [], 'train_acc': [], 'val_loss': [], 'val_acc': []}
     best_val_loss = float('inf')
     epochs_no_improve = 0
-    early_stopping_patience = 7
+    early_stopping_patience = 5
     
     # Resume training if the last checkpoint exists
     if os.path.exists(last_ckpt_path):
         print(f"  => Resuming from checkpoint: {last_ckpt_path}")
         checkpoint = torch.load(last_ckpt_path, map_location=device, weights_only=False)
-        model.load_state_dict(checkpoint['model_state_dict'])
-        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-        start_epoch = checkpoint['epoch']
-        history = checkpoint['history']
-        best_val_loss = checkpoint.get('best_val_loss', float('inf'))
-        epochs_no_improve = checkpoint.get('epochs_no_improve', 0)
-        if 'scheduler_state_dict' in checkpoint:
-            scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
-        print(f"  => Resumed seamlessly at epoch {start_epoch}")
+        try:
+            model.load_state_dict(checkpoint['model_state_dict'])
+            optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+            start_epoch = checkpoint['epoch']
+            history = checkpoint['history']
+            best_val_loss = checkpoint.get('best_val_loss', float('inf'))
+            epochs_no_improve = checkpoint.get('epochs_no_improve', 0)
+            if 'scheduler_state_dict' in checkpoint:
+                scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
+            print(f"  => Resumed seamlessly at epoch {start_epoch}")
+        except RuntimeError:
+            print("  => [WARNING] Architecture mismatch! Cannot resume from old checkpoint. Starting from scratch.")
 
     if start_epoch >= epochs:
         print(f"  => Training already completed max epochs ({epochs}).")
@@ -279,17 +347,3 @@ def train_cnn(
     print(f"  Finished training workflow. Models are in: {checkpoint_dir}")
     return model, history
 
-
-def extract_features_loop(model, dataloader, device):
-    """
-    Extract features directly from CustomCNN GAP layer.
-    """
-    model.eval()
-    feat_list = []
-    with torch.no_grad():
-        for inputs in dataloader:
-            if isinstance(inputs, list) or isinstance(inputs, tuple):
-                inputs = inputs[0]
-            outputs = model.extract_features(inputs.to(device))
-            feat_list.append(outputs.cpu().numpy())
-    return np.vstack(feat_list)

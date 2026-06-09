@@ -9,59 +9,109 @@ import cv2
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
-from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import LabelEncoder
 from concurrent.futures import ProcessPoolExecutor
-from config import RANDOM_STATE, TEST_SIZE, VAL_SIZE_FROM_TRAINVAL, DATASET_DIR, RESULTS_DIR, IMG_SIZE
+from config import DATASET_DIR, RESULTS_DIR, IMG_SIZE
 
 
-def background_cancellation(image):
-    """
-    Remove background using Otsu thresholding on Red and Green channels,
-    combined with morphological operations.
+def background_cancellation(image, img_size=299):
+    H, W = image.shape[:2]
+    center_img_x, center_img_y = W // 2, H // 2
 
-    Steps:
-      1. Extract Red and Green channels
-      2. Otsu threshold each channel -> binary mask
-      3. Combine masks (OR)
-      4. Morphological closing + flood-fill to fill holes
-      5. Morphological opening to remove small noise
-      6. Multiply mask with original image -> ROI
-    """
-    _, green, red = cv2.split(image)  # OpenCV = BGR
+    hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+    
+    lower_red = np.array([0, 35, 50]) 
+    upper_red = np.array([30, 255, 255])
+    lower_red_wrap = np.array([160, 35, 50])
+    upper_red_wrap = np.array([180, 255, 255])
+    lower_green = np.array([30, 35, 50])
+    upper_green = np.array([60, 255, 255]) 
+    
+    mask = cv2.inRange(hsv, lower_red, upper_red)
+    mask |= cv2.inRange(hsv, lower_red_wrap, upper_red_wrap)
+    mask |= cv2.inRange(hsv, lower_green, upper_green)
 
-    # Otsu thresholding
-    _, mask_red = cv2.threshold(red, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-    _, mask_green = cv2.threshold(green, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    kernel_open = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 7)) 
+    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel_open)
 
-    # Combine with OR
-    combined = cv2.bitwise_or(mask_red, mask_green)
+    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    if not contours:
+        return cv2.resize(image, (img_size, img_size))
+        
+    best_cnt = None
+    min_dist = float('inf')
+    
+    for cnt in contours:
+        if cv2.contourArea(cnt) < 500:
+            continue
+            
+        M = cv2.moments(cnt)
+        if M["m00"] != 0:
+            cx = int(M["m10"] / M["m00"])
+            cy = int(M["m01"] / M["m00"])
+        else:
+            cx, cy = 0, 0
+            
+        dist = (cx - center_img_x)**2 + (cy - center_img_y)**2
+        if dist < min_dist:
+            min_dist = dist
+            best_cnt = cnt
+            
+    if best_cnt is None:
+        return cv2.resize(image, (img_size, img_size))
 
-    # Morphological closing (fill small holes)
-    kernel_large = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (15, 15))
-    combined = cv2.morphologyEx(combined, cv2.MORPH_CLOSE, kernel_large, iterations=3)
+    final_mask = np.zeros((H, W), dtype=np.uint8)
 
-    # Flood-fill remaining holes
-    flood = combined.copy()
-    h, w = flood.shape[:2]
-    flood_mask = np.zeros((h + 2, w + 2), np.uint8)
-    cv2.floodFill(flood, flood_mask, (0, 0), 255)
-    combined = cv2.bitwise_or(combined, cv2.bitwise_not(flood))
+    cv2.drawContours(final_mask, [best_cnt], -1, 255, thickness=cv2.FILLED)
 
-    # Morphological opening (remove small noise)
-    kernel_small = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
-    combined = cv2.morphologyEx(combined, cv2.MORPH_OPEN, kernel_small, iterations=2)
+    kernel_close = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (25, 25))
+    final_mask = cv2.morphologyEx(final_mask, cv2.MORPH_CLOSE, kernel_close)
 
-    # Apply mask
-    mask_3ch = cv2.merge([combined, combined, combined])
-    return cv2.bitwise_and(image, mask_3ch)
+    contours_final, _ = cv2.findContours(final_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    if not contours_final:
+        return cv2.resize(image, (img_size, img_size))
+
+    cnt_final = max(contours_final, key=cv2.contourArea)
+    
+    x, y, w_rect, h_rect = cv2.boundingRect(cnt_final)
+    x, y = max(0, x), max(0, y)
+    w_rect, h_rect = min(W - x, w_rect), min(H - y, h_rect)
+    
+    cropped_roi = image[y:y+h_rect, x:x+w_rect]
+    cropped_mask = final_mask[y:y+h_rect, x:x+w_rect]
+    
+    roi_bg_removed = cv2.bitwise_and(cropped_roi, cropped_roi, mask=cropped_mask)
+    
+    h_crop, w_crop = roi_bg_removed.shape[:2]
+    max_side = max(h_crop, w_crop)
+    
+    top = (max_side - h_crop) // 2
+    bottom = max_side - h_crop - top
+    left = (max_side - w_crop) // 2
+    right = max_side - w_crop - left
+    
+    squared_img = cv2.copyMakeBorder(
+        roi_bg_removed, top, bottom, left, right, 
+        cv2.BORDER_CONSTANT, value=[0, 0, 0]
+    )
+    
+    return cv2.resize(squared_img, (img_size, img_size))
+
+def convert_color_spaces(roi_rgb):
+    """ Nhận ảnh RGB đã cắt nền, trả về 4 định dạng """
+    roi_bgr = cv2.cvtColor(roi_rgb, cv2.COLOR_RGB2BGR)
+    return {
+        'RGB': roi_rgb,
+        'HSV': cv2.cvtColor(roi_bgr, cv2.COLOR_BGR2HSV),
+        'LAB': cv2.cvtColor(roi_bgr, cv2.COLOR_BGR2LAB),
+        'YCrCb': cv2.cvtColor(roi_bgr, cv2.COLOR_BGR2YCrCb)
+    }
 
 def _process_single_image(args):
     """Helper for parallel processing."""
     path, fname, cls, img_size = args
     img = cv2.imread(os.path.join(path, fname))
     if img is None:
-        return None, None, None
+        return None, None, None, None
     
     roi = background_cancellation(img)
     roi = cv2.resize(roi, (img_size, img_size))
@@ -70,7 +120,7 @@ def _process_single_image(args):
     # Also return a resized original for sample visualization
     orig_resized = cv2.cvtColor(cv2.resize(img, (img_size, img_size)), cv2.COLOR_BGR2RGB)
     
-    return roi_rgb, cls, orig_resized
+    return roi_rgb, cls, orig_resized, fname
 
 def load_and_preprocess_images(dataset_dir=DATASET_DIR, img_size=IMG_SIZE,
                                 save_samples=True):
@@ -81,6 +131,7 @@ def load_and_preprocess_images(dataset_dir=DATASET_DIR, img_size=IMG_SIZE,
     Returns:
         images  – np.ndarray of shape (N, img_size, img_size, 3), dtype uint8
         labels  – list of string labels
+        fnames  – list of string filenames
     """
     class_dirs = {
         'Reject': os.path.join(dataset_dir, 'Reject'),
@@ -91,9 +142,6 @@ def load_and_preprocess_images(dataset_dir=DATASET_DIR, img_size=IMG_SIZE,
     print("=" * 60)
     print("STEP 1: Loading & Preprocessing (Background Cancellation)")
     print("=" * 60)
-
-    images, labels = [], []
-    samples = {}
 
     tasks = []
     for cls, path in class_dirs.items():
@@ -109,20 +157,17 @@ def load_and_preprocess_images(dataset_dir=DATASET_DIR, img_size=IMG_SIZE,
 
     print(f"  Processing {len(tasks)} images in parallel ... ", end="", flush=True)
     
-    images, labels = [], []
+    images, labels, fnames = [], [], []
     samples = {}
     
-    # Giới hạn tối đa 4 tiến trình con để tránh tràn bộ nhớ ảo (Paging file / Virtual Memory) trên Windows
-    max_workers = min(4, os.cpu_count() or 1)
-    with ProcessPoolExecutor(max_workers=max_workers) as executor:
-        results = list(executor.map(_process_single_image, tasks))
-        
-    for roi_rgb, cls, orig_resnet in results:
-        if roi_rgb is not None:
-            images.append(roi_rgb)
-            labels.append(cls)
-            if cls not in samples:
-                samples[cls] = {'original': orig_resnet, 'preprocessed': roi_rgb}
+    with ProcessPoolExecutor() as executor:
+        for roi_rgb, cls, orig_resnet, fname in executor.map(_process_single_image, tasks):
+            if roi_rgb is not None:
+                images.append(roi_rgb)
+                labels.append(cls)
+                fnames.append(fname)
+                if cls not in samples:
+                    samples[cls] = {'original': orig_resnet, 'preprocessed': roi_rgb}
 
     print("[OK]")
 
@@ -131,7 +176,7 @@ def load_and_preprocess_images(dataset_dir=DATASET_DIR, img_size=IMG_SIZE,
 
     images = np.array(images, dtype=np.uint8)
     print(f"\n  Total: {len(images)} images, shape={images[0].shape}")
-    return images, labels
+    return images, labels, fnames
 
 
 def _save_preprocessing_samples(samples):
@@ -153,34 +198,3 @@ def _save_preprocessing_samples(samples):
     plt.savefig(out, dpi=150)
     plt.close()
     print(f"  Sample visualization saved to {out}")
-
-def split_dataset(images, labels):
-    """Stratified three-way split."""
-    print("\n" + "=" * 60)
-    print("STEP 2: Splitting Dataset (70% Train / 10% Val / 20% Test)")
-    print("=" * 60)
-
-    le = LabelEncoder()
-    y = le.fit_transform(labels)
-
-    X_tv, X_te, y_tv, y_te = train_test_split(
-        images, y, test_size=TEST_SIZE,
-        stratify=y, random_state=RANDOM_STATE,
-    )
-
-    X_tr, X_v, y_tr, y_v = train_test_split(
-        X_tv, y_tv, test_size=VAL_SIZE_FROM_TRAINVAL,
-        stratify=y_tv, random_state=RANDOM_STATE,
-    )
-
-    n = len(images)
-    print(f"  Train: {len(X_tr)} ({len(X_tr)/n*100:.1f}%)")
-    print(f"  Val:   {len(X_v)}  ({len(X_v)/n*100:.1f}%)")
-    print(f"  Test:  {len(X_te)} ({len(X_te)/n*100:.1f}%)")
-
-    for tag, ys in [("Train", y_tr), ("Val", y_v), ("Test", y_te)]:
-        counts = np.bincount(ys)
-        dist = ", ".join(f"{le.classes_[i]}: {counts[i]}" for i in range(len(counts)))
-        print(f"    {tag}: {dist}")
-
-    return X_tr, X_v, X_te, y_tr, y_v, y_te, le

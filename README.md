@@ -1,113 +1,107 @@
-# 🍅 Tomato Quality Classification & Real-time AI Server
+# Tomato Quality Classification (PyTorch & Scikit-Learn)
 
-Hệ thống nhận diện và phân loại mức độ chín, chất lượng quả cà chua bằng công nghệ **Mạng Neural Tích Chập (Custom CNN)** phát triển từ đầu bằng PyTorch, kết hợp với các bộ phân lớp Học máy (Machine Learning Classifiers) như SVM, Random Forest và KNN để đánh giá so sánh.
+Hệ thống nhận diện và phân loại mức độ trưởng thành, chất lượng của cà chua chạy trên hệ thống nhúng/Edge AI hoặc máy tính cá nhân. Hệ thống đánh giá đồng thời hai phương pháp:
+- **Học máy truyền thống (Machine Learning)**: Sử dụng các mô hình như SVM, Random Forest, K-NN, Gaussian Naive Bayes kết hợp với trích xuất đặc trưng thống kê 12D.
+- **Học sâu (Deep Learning)**: Mạng CNN tự định nghĩa xây dựng bằng PyTorch.
 
-Dự án này tích hợp đầy đủ từ khâu huấn luyện mô hình (Training), chuyển giao tri thức (Transfer Learning), nhận diện hình ảnh đơn lẻ (Inference) cho tới việc cung cấp một **AI Server độc lập** kết nối trực tiếp với băng tải phân loại IoT (ESP32-CAM).
+Hệ thống tích hợp thuật toán phân tích màu đa không gian (RGB, HSV, CIE Lab, YCbCr), thuật toán tách nền Center Bias ưu việt và một máy chủ AI Server độc lập phục vụ cho việc tích hợp thực tế với băng chuyền thông qua ESP32-CAM.
+
+Dự án sử dụng trình quản lý gói cực nhanh **uv** để cấu hình và chạy mọi luồng công việc.
 
 ---
 
-## 📂 Cấu Trúc Dự Án
+## 📂 Cấu trúc Dự án
 
 ```text
 .
-├── AI-SERVER/            # Module AI Server độc lập kết nối ESP32 & Web Backend
-├── Dataset/              # Thư mục chứa tập dữ liệu gốc (3 phân lớp)
-├── Dataset_Cachua/       # Thư mục chứa tập dữ liệu mới phục vụ Transfer Learning
-├── results/              # Thư mục lưu kết quả huấn luyện (trọng số, biểu đồ)
-├── config.py             # Cấu hình siêu tham số (Hyper-parameters)
-├── model.py              # Định nghĩa lớp CustomCNN và vòng lặp huấn luyện PyTorch
-├── preprocessing.py      # Tiền xử lý ảnh (Background Cancellation tách nền bằng OpenCV)
-├── augmentation.py       # Tăng cường dữ liệu (Data Augmentation bằng Torchvision)
-├── train_module.py       # Module huấn luyện mô hình CustomCNN cơ sở (Base model)
-├── transfer_module.py    # Module Transfer Learning trên tập dữ liệu cà chua mới
-├── predict_module.py     # Module nhận diện đơn lẻ cho một bức ảnh từ Terminal
-├── classifiers.py        # Thử nghiệm trích xuất đặc trưng với các bộ phân lớp ML (SVM, RF, KNN)
-├── visualization.py      # Xuất biểu đồ phân tích (Confusion Matrix, Loss/Acc curves)
-├── .env.example          # Tệp cấu hình đường dẫn mẫu cho dự án gốc
-└── README.md             # Hướng dẫn sử dụng dự án
+├── train_cachua_module.py # Orchestrator chính: Huấn luyện đồng loạt ML & CNN trên 4 không gian màu
+├── train_ml.py            # Huấn luyện mô hình Học máy truyền thống (SVM, RF, KNN, GNB) bằng GridSearchCV
+├── train_cnn.py           # Huấn luyện mô hình Học sâu (CNN) tự định nghĩa
+├── predict_module.py      # Phân đoán và suy luận nhãn trực tiếp từ một hình ảnh đơn lẻ (Tự động tải mô hình tốt nhất)
+├── model.py               # Định nghĩa cấu trúc CNN và hàm tiền xử lý Tensor
+├── preprocessing.py       # Cắt nền ảnh (Background Cancellation) nâng cao dùng OpenCV Center Bias
+├── statistical_features.py# Rút trích 12 đặc trưng thống kê màu sắc cho học máy
+├── reporting.py           # Sinh báo cáo phân loại, Confusion Matrix, AUC-ROC, bảng đánh giá
+├── evaluation.py          # Hàm tính toán chỉ số đánh giá (Acc, F1, Precision, Specificity,...)
+├── visualization.py       # Biểu đồ trực quan kết quả 
+├── config.py              # Cấu hình tham số hyper-parameters mặc định
+├── .env.example           # Tệp cấu hình biến môi trường mẫu
+└── AI-SERVER/             # Thư mục máy chủ AI Flask API phục vụ suy luận thực tế (ESP32-CAM)
 ```
 
 ---
 
-## 🛠 Hướng Dẫn Cài Đặt (Installation)
+## ✨ Tính năng Nổi bật
 
-### 1. Chuẩn bị môi trường
-Dự án được quản lý gói bằng công cụ hiện đại `uv`. Bạn có thể cài đặt các dependencies tự động:
+1. **Thuật toán Tách Nền Center Bias (Background Cancellation)**:
+   * Chuyển đổi sang hệ màu HSV để lọc dải màu Đỏ/Xanh lá và loại bỏ các nhiễu từ kim loại, ánh sáng phản xạ.
+   * Sử dụng phép toán hình thái học (Morphological Operations) để lấp các vùng trống bên trong quả.
+   * Áp dụng **Center Bias** để đo khoảng cách từ trọng tâm (Centroid) của các vật thể màu tới trung tâm bức ảnh, lọc bỏ hoàn toàn nhiễu từ biên ngoài băng chuyền và chỉ giữ lại quả cà chua ở tâm.
 
+2. **So sánh Đa Không Gian Màu (Multi-Color Space Analysis)**:
+   * Tự động huấn luyện, đánh giá và tìm ra mô hình hoạt động tốt nhất độc lập trên 4 không gian màu khác nhau: **RGB**, **HSV**, **CIE Lab**, và **YCbCr**.
+   * Tính toán và xuất biểu đồ `Đóng góp Kênh Màu (Channel Contribution)` qua phương pháp Permutation Importance.
+
+3. **Mạng Deep Learning & Machine Learning Tự Động Hóa**:
+   * **Machine Learning**: Tìm kiếm siêu tham số tối ưu (Hyperparameter Tuning) tự động sử dụng `GridSearchCV` trên 12D đặc trưng.
+   * **CNN**: Huấn luyện đầu cuối, tự động tính toán trọng số cân bằng lớp (Class Weights), tính toán ROC-AUC và Channel Importance.
+
+4. **Zero-Config Prediction (Suy luận thông minh)**:
+   * Module dự đoán (`predict_module.py` và `AI-SERVER`) tự động phân tích tệp cấu hình `best_model_info.json` sau khi train để tải lên "Mô Hình Tốt Nhất" (dù là CNN hay ML), áp dụng đúng không gian màu chuẩn, tính năng chuẩn bị ảnh trước mà không cần cấu hình tay.
+
+5. **AI Server phục vụ Băng Chuyền Bất Đồng Bộ**:
+   * Flask Server độc lập hỗ trợ nhận ảnh từ board ESP32-CAM qua form-data `/predict`.
+   * Hỗ trợ tải tự động mô hình vô địch cuối cùng (Absolute Best Model) để dự đoán.
+   * Xử lý luồng chạy ngầm bất đồng bộ (Background Thread) để upload ảnh lên MinIO và gọi Web Backend API, trả kết quả về ESP32 tức thì.
+
+---
+
+## 🛠 Hướng dẫn Sử dụng (Workflow)
+
+Yêu cầu cài đặt công cụ **uv** để quản lý môi trường ảo.
+
+### 0. Cài đặt Môi trường
+Tự động đồng bộ hóa và cài đặt tất cả các thư viện (PyTorch, Torchvision, OpenCV, Scikit-Learn, Pandas...):
 ```bash
-# Cài đặt toàn bộ môi trường ảo và thư viện thông qua uv
 uv sync
 ```
 
-Hoặc sử dụng cách truyền thống bằng `pip` (khuyên dùng tạo môi trường ảo trước):
-
-```bash
-# Tạo môi trường ảo
-python -m venv .venv
-# Kích hoạt môi trường ảo (Windows)
-.venv\Scripts\activate
-# Cài đặt các thư viện cần thiết
-pip install torch torchvision opencv-python scikit-learn matplotlib requests flask minio python-dotenv
-```
-
-### 2. Cấu hình biến môi trường
-Tạo tệp `.env` tại thư mục gốc bằng cách sao chép từ tệp mẫu:
-
+Tạo cấu hình biến môi trường cục bộ:
 ```bash
 copy .env.example .env
 ```
-
-Mở tệp `.env` vừa tạo và chỉnh sửa các đường dẫn thư mục dữ liệu trên máy của bạn:
-*   `DATASET_DIR`: Đường dẫn tới tập dữ liệu huấn luyện cơ sở (gồm 3 thư mục con `Reject`, `Ripe`, `Unripe`).
-*   `DATASET_CACHUA_DIR`: Đường dẫn tới tập dữ liệu cà chua mới dùng để Transfer Learning.
-*   `RESULTS_DIR`: Nơi lưu trữ trọng số mô hình và các biểu đồ phân tích (mặc định là `./results`).
+Mở tệp `.env` và tùy chỉnh đường dẫn thư mục dataset của bạn (`DATASET_CACHUA_DIR`).
 
 ---
 
-## 💻 Hướng Dẫn Sử Dụng (Usage Workflow)
-
-### **Bước 1: Huấn luyện mô hình cơ sở (Base Training)**
-Chạy script huấn luyện để dạy mô hình `CustomCNN` phân loại trên tập dữ liệu cơ sở:
-
+### 1. Huấn luyện Mô hình Đánh Giá Toàn Diện (Orchestrator Pipeline)
+Chạy kịch bản tự động tải dữ liệu, trích xuất đặc trưng, huấn luyện 4 mô hình ML và 1 mô hình CNN qua tất cả không gian màu, sau đó tổng hợp báo cáo ROC-AUC:
 ```bash
-uv run train_module.py
-# Hoặc: python train_module.py
+uv run train_cachua_module.py
 ```
-*   **Đặc điểm**: Chương trình tự động lưu trọng số mô hình có độ chính xác cao nhất trên tập validation vào `results/train_save_model/base_cnn_best.pth`.
-*   **Epoch Resuming (Tự khôi phục)**: Nếu tiến trình học bị ngắt đột ngột (mất điện, tắt terminal), bạn chỉ cần chạy lại lệnh trên. Chương trình sẽ tự động tải checkpoint `_last.pth` và tiếp tục huấn luyện từ epoch bị ngắt.
-*   **Xuất đồ thị**: Biểu đồ Accuracy/Loss (`base_cnn_history.png`) được cập nhật trực tiếp sau mỗi epoch.
-
-### **Bước 2: Huấn luyện chuyển giao (Transfer Learning)**
-Huấn luyện mô hình trên tập dữ liệu cà chua mới (`DATASET_CACHUA_DIR`) bằng cách kế thừa các đặc trưng đã học từ mô hình cơ sở:
-
-```bash
-uv run transfer_module.py
-# Hoặc: python transfer_module.py
-```
-*   Chương trình sẽ tự động lấy trọng số từ `base_cnn_best.pth`, đóng băng phần trích xuất đặc trưng và chỉ tối ưu hóa các lớp phân loại cuối cùng cho bài toán mới.
-*   Kết quả lưu trữ tại `results/transfer_save_model/transfer_cnn_best.pth`.
-
-### **Bước 3: Nhận diện ảnh đơn lẻ từ Terminal (Inference)**
-Nếu bạn muốn kiểm tra nhanh kết quả nhận diện của mô hình đối với một bức ảnh cà chua đơn lẻ:
-
-```bash
-# Chạy dự đoán với mô hình mặc định (Transfer Learning model)
-uv run predict_module.py --image "duong_dan_anh_ca_chua.jpg"
-
-# Hoặc sử dụng lệnh python truyền thống với chỉ định tệp trọng số mô hình khác
-python predict_module.py --image "duong_dan_anh_ca_chua.jpg" --model "results/train_save_model/base_cnn_best.pth"
-```
-*   Ảnh thô sẽ tự động được đưa qua hàm `background_cancellation` tách nền, chuẩn hóa kích thước thành 299x299 trước khi đưa vào PyTorch dự đoán.
-*   Terminal sẽ hiển thị xác suất (probability) cụ thể của cả 3 nhãn.
+* Báo cáo text chi tiết và biểu đồ lưu tại: `results/results_<color_space>/`
+* Các bảng so sánh toàn diện lưu tại: `results/table_evaluation_results.txt` và `results/table_dominant_channel.txt`
+* Thông tin Mô hình Tốt nhất (Vô địch) được lưu tự động tại: `results/best_model_info.json`
 
 ---
 
-## ⚡️ AI Server Kết Nối Hệ Thống Phân Loại IoT
+### 2. Phân đoán Trực tiếp (Inference)
+Chạy dự đoán nhãn chất lượng của 1 hình ảnh đơn lẻ (Tự động tải mô hình Vô Địch từ bước 1):
+```bash
+uv run predict_module.py --image "test_sample.jpg"
+```
 
-Thư mục **`AI-SERVER`** chứa một máy chủ độc lập dùng để kết nối trực tiếp với board mạch **ESP32-CAM** trên băng tải phân loại thực tế.
+---
 
-*   **Tính năng chính**:
-    *   Sử dụng **HTTP Keep-Alive** giúp duy trì kết nối mạng tốc độ cao với camera.
-    *   Tích hợp đa luồng (**Multi-threading**): Phân loại ảnh bằng PyTorch và trả kết quả ngay lập tức cho camera để băng tải hoạt động ổn định. Tác vụ đẩy ảnh lên **MinIO** và gọi Web Backend API được chạy ngầm dưới nền.
-*   **Cách sử dụng**:
-    Xem chi tiết hướng dẫn chạy và cấu hình API tại [README.md của AI-SERVER](file:///e:/python_project/PBL5/AI-SERVER/README.md).
+## ⚡ AI Server Deployment
+Để khởi chạy Flask server phục vụ ESP32-CAM gửi ảnh thực tế từ băng chuyền:
+1. Chuyển vào thư mục server:
+   ```bash
+   cd AI-SERVER
+   ```
+2. Cấu hình các biến trong `AI-SERVER/.env` (Tạo từ mẫu `copy .env.example .env`).
+3. Khởi động server:
+   ```bash
+   uv run app.py
+   ```
+Server sẽ chạy mặc định tại cổng `5000` sẵn sàng nhận dữ liệu tại endpoint `/predict`. Nó cũng sẽ tự động sử dụng chung pipeline và tải mô hình Vô Địch từ kết quả huấn luyện.

@@ -74,19 +74,20 @@ def print_summary_table(results):
     print("=" * 80)
 
     hdr = (f"{'Classifier':<25} {'Accuracy':>10} {'Precision':>10} "
-           f"{'Recall':>10} {'F1-Score':>10} {'Specificity':>12}")
+           f"{'Recall':>10} {'F1-Score':>10} {'Specificity':>12} {'Train(s)':>10} {'Infer(s)':>10}")
     print(hdr)
-    print("-" * 80)
+    print("-" * 105)
 
     best_acc, best_name = 0, ""
     for name, r in results.items():
+        tr_t = r.get('train_time', 0.0)
+        in_t = r.get('inference_time', 0.0)
         print(f"{name:<25} {r['accuracy']*100:>9.2f}% {r['precision']*100:>9.2f}% "
               f"{r['recall']*100:>9.2f}% {r['f1_score']*100:>9.2f}% "
-              f"{r['avg_specificity']*100:>11.2f}%")
+              f"{r['avg_specificity']*100:>11.2f}% {tr_t:>9.2f}s {in_t:>9.4f}s")
         if r['accuracy'] > best_acc:
             best_acc, best_name = r['accuracy'], name
 
     print("-" * 80)
     print(f"\n  >>> Best: {best_name}  —  Accuracy = {best_acc*100:.2f}%")
-    print(f"  >>> Paper reports CNN-SVM ≈ 96.67% for three-class")
     print("=" * 80)

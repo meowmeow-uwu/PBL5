@@ -1,0 +1,7 @@
+{
+    "model_name": "K-NN",
+    "color_space": "HSV",
+    "accuracy": 93.25396825396825,
+    "model_path": "results/results_HSV/k-nn_best.pkl",
+    "model_type": "ml"
+}
