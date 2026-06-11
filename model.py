@@ -12,11 +12,8 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
-from torchvision import models
 
-from config import (
-    LEARNING_RATE, DROPOUT_1, DROPOUT_2, DENSE_UNITS
-)
+from config import LEARNING_RATE
 
 # --- Dataset ---
 class FruitDataset(torch.utils.data.Dataset):
@@ -55,7 +52,6 @@ class FruitDataset(torch.utils.data.Dataset):
             return img_tensor, label
         return img_tensor
 
-
 # --- Loss Function ---
 class FocalLoss(nn.Module):
     def __init__(self, weight=None, gamma=2.0, reduction='mean'):
@@ -78,9 +74,6 @@ class FocalLoss(nn.Module):
             return focal_loss.sum()
         else:
             return focal_loss
-
-import torch
-import torch.nn as nn
 
 # 1. Khối Cơ chế Chú ý (Squeeze-and-Excitation)
 class SEBlock(nn.Module):
